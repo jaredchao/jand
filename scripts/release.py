@@ -63,6 +63,17 @@ def archive(folder, target, windows=False):
             output.add(folder, arcname=folder.name)
 
 
+def agent_doc(windows, relay):
+    """Render docs/AGENT.md for one platform: the Agent-facing counterpart to QUICKSTART."""
+    exe = r".\jand.exe" if windows else "./jand"
+    text = (ROOT / "docs/AGENT.md").read_text(encoding="utf-8")
+    text = re.sub(r"<!-- packaging-note-start -->.*?<!-- packaging-note-end -->\n\n?", "", text, flags=re.DOTALL)
+    text = text.replace("__RELAY_URL__", relay).replace("__JAND__", exe)
+    if "__RELAY_URL__" in text or "__JAND__" in text or "packaging-note" in text:
+        raise RuntimeError("AGENT.md still contains packaging placeholders after rendering")
+    return text
+
+
 def quickstart(windows, relay):
     exe = r".\jand.exe" if windows else "./jand"
     shell = "PowerShell" if windows else "终端"
@@ -123,6 +134,7 @@ def main():
             subprocess.run(["go", "build", "-trimpath", "-buildvcs=false", "-ldflags=-s -w", "-o", str(binary), "./cmd/jand"], cwd=ROOT, env=environment, check=True)
             binary.chmod(0o755)
             (folder / "QUICKSTART.md").write_text(quickstart(goos == "windows", args.relay))
+            (folder / "AGENT.md").write_text(agent_doc(goos == "windows", args.relay))
             shutil.copyfile(ROOT / "docs/jand-template.md", folder / "jand-template.md")
             add_licenses(folder, modules, goroot)
             info = {"product": "jand", "version": version, "module": "github.com/jaredchao/jand",
