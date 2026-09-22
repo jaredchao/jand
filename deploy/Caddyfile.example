@@ -1,0 +1,6 @@
+# Replace with a domain whose DNS resolves to this server.
+# Add this site block to an existing Caddyfile; do not overwrite other sites.
+jand.example.com {
+	# Verify this proxy does not buffer request bodies to disk.
+	reverse_proxy 127.0.0.1:8787
+}

@@ -1,0 +1,10 @@
+/bin/
+/dist/
+/received/
+/received-*/
+/inbox/
+*.test
+coverage.out
+__pycache__/
+*.pyc
+.DS_Store
