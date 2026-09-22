@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import time
 import tarfile
 import tempfile
 from urllib.parse import urlsplit
@@ -58,11 +59,19 @@ def sign_macos(binary, identity):
     for step in (["codesign", "--force", "--sign", identity, "--options", "runtime",
                   "--timestamp", str(binary)],
                  ["codesign", "--verify", "--strict", str(binary)]):
-        result = subprocess.run(step, capture_output=True, text=True)
-        if result.returncode != 0:
+        # Apple's timestamp service fails intermittently; a signature without a
+        # trusted timestamp stops verifying once the certificate expires, so
+        # retry rather than drop --timestamp.
+        for attempt in range(4):
+            result = subprocess.run(step, capture_output=True, text=True)
+            if result.returncode == 0:
+                break
+            message = (result.stderr or result.stdout).strip()
+            if "timestamp service is not available" in message and attempt < 3:
+                time.sleep(3 * (attempt + 1))
+                continue
             raise RuntimeError(
-                f"{' '.join(step[:2])} failed for {binary.name} (exit {result.returncode}): "
-                f"{(result.stderr or result.stdout).strip()}")
+                f"{' '.join(step[:2])} failed for {binary.name} (exit {result.returncode}): {message}")
 
 
 def notarize_macos(binary, profile):
@@ -70,9 +79,19 @@ def notarize_macos(binary, profile):
     stapled, so Gatekeeper checks the ticket online on first run."""
     with tempfile.TemporaryDirectory(prefix=".jand-notary-") as temp:
         bundle = Path(temp) / (binary.name + ".zip")
-        subprocess.run(["ditto", "-c", "-k", "--keepParent", str(binary), str(bundle)], check=True)
-        subprocess.run(["xcrun", "notarytool", "submit", str(bundle),
-                        "--keychain-profile", profile, "--wait"], check=True)
+        for step in (["ditto", "-c", "-k", "--keepParent", str(binary), str(bundle)],
+                     ["xcrun", "notarytool", "submit", str(bundle),
+                      "--keychain-profile", profile, "--wait"]):
+            result = subprocess.run(step, capture_output=True, text=True)
+            print((result.stdout or "").strip(), flush=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"{step[0]} failed for {binary.name} (exit {result.returncode}): "
+                    f"{(result.stderr or result.stdout).strip()}")
+            if "status: Accepted" in (result.stdout or "") or step[0] == "ditto":
+                continue
+            raise RuntimeError(
+                f"notarization did not reach Accepted for {binary.name}: {(result.stdout or '').strip()}")
 
 
 def archive(folder, target, windows=False):
