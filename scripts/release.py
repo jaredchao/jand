@@ -52,6 +52,29 @@ def add_licenses(folder, modules, goroot):
         shutil.copyfile(source, notices / (name.replace("/", "_") + "-LICENSE.txt"))
 
 
+def sign_macos(binary, identity):
+    """Developer ID signing. Must run BEFORE binary_sha256 is computed: signing
+    rewrites the binary, so a hash taken earlier would not match what ships."""
+    for step in (["codesign", "--force", "--sign", identity, "--options", "runtime",
+                  "--timestamp", str(binary)],
+                 ["codesign", "--verify", "--strict", str(binary)]):
+        result = subprocess.run(step, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"{' '.join(step[:2])} failed for {binary.name} (exit {result.returncode}): "
+                f"{(result.stderr or result.stdout).strip()}")
+
+
+def notarize_macos(binary, profile):
+    """Submit one executable for notarization. A bare executable cannot be
+    stapled, so Gatekeeper checks the ticket online on first run."""
+    with tempfile.TemporaryDirectory(prefix=".jand-notary-") as temp:
+        bundle = Path(temp) / (binary.name + ".zip")
+        subprocess.run(["ditto", "-c", "-k", "--keepParent", str(binary), str(bundle)], check=True)
+        subprocess.run(["xcrun", "notarytool", "submit", str(bundle),
+                        "--keychain-profile", profile, "--wait"], check=True)
+
+
 def archive(folder, target, windows=False):
     if windows:
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as output:
@@ -74,10 +97,16 @@ def agent_doc(windows, relay):
     return text
 
 
-def quickstart(windows, relay):
+def quickstart(windows, relay, signed=False, notarized=False):
     exe = r".\jand.exe" if windows else "./jand"
     shell = "PowerShell" if windows else "终端"
     example_note = "203.0.113.10 是示例 IP，必须换成实际地址。" if "203.0.113.10" in relay else ""
+    if notarized:
+        provenance = "本包的可执行文件已使用 Developer ID 签名并通过 Apple 公证。未做独立密码学审计。"
+    elif signed:
+        provenance = "本包的可执行文件已使用 Developer ID 签名，但未经 Apple 公证；从浏览器下载时 macOS 仍可能拦截。未做独立密码学审计。"
+    else:
+        provenance = "本版为开发原型，未做平台代码签名、公证或独立密码学审计。"
     return f"""# jand 使用说明
 
 这是已经编译好的客户端，无需安装 Go。解压后在此目录打开{shell}。
@@ -101,7 +130,7 @@ def quickstart(windows, relay):
 发送命令成功只表示密文已暂存；若要等待接收方保存确认，发送时加 `--wait 10m`。
 每次最多传 10 MiB 单文件，接收码只能领取一次；领取失败后由发送方生成新码。
 
-本版为开发原型，未做平台代码签名、公证或独立密码学审计。
+{provenance}
 更多说明见构建信息及随包的模板。二进制 SHA-256 在 BUILD-INFO.json 中。
 """
 
@@ -110,12 +139,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=ROOT / "dist" / "releases")
     parser.add_argument("--relay", default="http://203.0.113.10:8787")
+    parser.add_argument("--sign", default=os.environ.get("JAND_SIGN_IDENTITY"),
+                        help="Developer ID identity for macOS binaries; skipped when unset")
+    parser.add_argument("--notary-profile", default=os.environ.get("JAND_NOTARY_PROFILE"),
+                        help="notarytool keychain profile; requires --sign")
     args = parser.parse_args()
     url = urlsplit(args.relay)
     if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password or url.query or url.fragment or url.path not in {"", "/"} or any(ch.isspace() for ch in args.relay):
         parser.error("--relay must be an http(s):// origin URL without credentials, path, query or fragment")
     if not re.fullmatch(r"https?://[A-Za-z0-9.:[\]-]+/?", args.relay):
         parser.error("--relay must not contain shell or Markdown metacharacters")
+    if args.notary_profile and not args.sign:
+        parser.error("--notary-profile requires --sign: notarization without a Developer ID signature is rejected")
     version = re.search(r'const version = "([A-Za-z0-9.-]+)"', (ROOT / "cmd/jand/main.go").read_text()).group(1)
     output = args.out.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -133,7 +168,14 @@ def main():
             environment = dict(os.environ, GOOS=goos, GOARCH=goarch, CGO_ENABLED="0")
             subprocess.run(["go", "build", "-trimpath", "-buildvcs=false", "-ldflags=-s -w", "-o", str(binary), "./cmd/jand"], cwd=ROOT, env=environment, check=True)
             binary.chmod(0o755)
-            (folder / "QUICKSTART.md").write_text(quickstart(goos == "windows", args.relay))
+            signed = notarized = False
+            if goos == "darwin" and args.sign:
+                sign_macos(binary, args.sign)
+                signed = True
+                if args.notary_profile:
+                    notarize_macos(binary, args.notary_profile)
+                    notarized = True
+            (folder / "QUICKSTART.md").write_text(quickstart(goos == "windows", args.relay, signed, notarized))
             (folder / "AGENT.md").write_text(agent_doc(goos == "windows", args.relay))
             shutil.copyfile(ROOT / "docs/jand-template.md", folder / "jand-template.md")
             add_licenses(folder, modules, goroot)
@@ -142,7 +184,7 @@ def main():
                     "toolchain": toolchain, "cgo_enabled": False,
                     "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
                     "dependencies": {k: v["Version"] for k, v in sorted(modules.items())},
-                    "platform_signed": False, "public_relay_deployed": False}
+                    "platform_signed": signed, "notarized": notarized}
             (folder / "BUILD-INFO.json").write_text(json.dumps(info, ensure_ascii=False, indent=2) + "\n")
             suffix = ".zip" if goos == "windows" else ".tar.gz"
             path = output / (name + suffix)

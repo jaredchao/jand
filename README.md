@@ -46,4 +46,17 @@ make smoke
 make release
 ```
 
-跨平台包生成到 `dist/releases/`。Supervisor 与 HTTPS 部署步骤见 [deploy/INSTALL.md](deploy/INSTALL.md)；部署后可运行 `python3 scripts/remote_smoke.py --relay https://你的域名` 做公网收发自测。协议和安全边界见 [HTTP 设计](docs/HTTP_DESIGN.md)。原始需求留在 [product-original.md](docs/product-original.md)；旧 WebSocket 原型的协议文档留作历史记录，不适用于 0.2。
+跨平台包生成到 `dist/releases/`。
+
+macOS 二进制可选签名与公证，两者都不给时自动跳过并在 `BUILD-INFO.json` 与包内说明中如实标注：
+
+```bash
+# 仅签名（Gatekeeper 对浏览器下载的文件仍会拦截）
+python3 scripts/release.py --sign "Developer ID Application: NAME (TEAMID)"
+
+# 签名 + 公证；先存一次凭据，密码不会进入仓库或命令行历史
+xcrun notarytool store-credentials jand-notary --apple-id <Apple ID> --team-id <TEAMID>
+python3 scripts/release.py --sign "Developer ID Application: NAME (TEAMID)" --notary-profile jand-notary
+```
+
+也可用环境变量 `JAND_SIGN_IDENTITY` 与 `JAND_NOTARY_PROFILE` 代替参数。签名在计算 `binary_sha256` 之前执行，因此 `BUILD-INFO.json` 中的哈希始终对应最终发出的文件。裸可执行文件无法装订公证票据，Gatekeeper 在首次运行时联网校验。Supervisor 与 HTTPS 部署步骤见 [deploy/INSTALL.md](deploy/INSTALL.md)；部署后可运行 `python3 scripts/remote_smoke.py --relay https://你的域名` 做公网收发自测。协议和安全边界见 [HTTP 设计](docs/HTTP_DESIGN.md)。原始需求留在 [product-original.md](docs/product-original.md)；旧 WebSocket 原型的协议文档留作历史记录，不适用于 0.2。
