@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -134,6 +135,7 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) int {
 	}
 	config := relay.DefaultConfig()
 	config.MaxSessions = *capacity
+	config.Logger = slog.New(slog.NewTextHandler(out, nil))
 	r := relay.New(config)
 	defer r.Close()
 	listener, err := net.Listen("tcp", *addr)
@@ -143,7 +145,8 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) int {
 	}
 	server := &http.Server{Handler: r, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8192}
 	defer server.Close()
-	fmt.Fprintf(out, "Relay listening on %s (memory-only sessions)\n", listener.Addr())
+	config.Logger.Info("relay listening", "addr", listener.Addr().String(),
+		"max_sessions", config.MaxSessions, "max_stored", config.MaxStoredBytes, "ttl", config.TTL)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	select {

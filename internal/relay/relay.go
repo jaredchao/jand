@@ -5,7 +5,9 @@ package relay
 import (
 	"crypto/subtle"
 	"encoding/base64"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,6 +23,9 @@ type Config struct {
 	MaxSessions    int
 	MaxStoredBytes int64
 	TTL            time.Duration
+	// Logger records session lifecycle events. Nil disables logging, which is
+	// what tests and library users get by default.
+	Logger *slog.Logger
 }
 
 func DefaultConfig() Config {
@@ -37,6 +42,8 @@ type session struct {
 
 type Relay struct {
 	config  Config
+	log     *slog.Logger
+	started time.Time
 	mu      sync.Mutex
 	rooms   map[string]*session
 	stored  int64
@@ -55,7 +62,27 @@ func New(config Config) *Relay {
 	if config.TTL <= 0 {
 		config.TTL = d.TTL
 	}
-	return &Relay{config: config, rooms: make(map[string]*session), uploads: make(chan struct{}, min(8, config.MaxSessions))}
+	logger := config.Logger
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	return &Relay{config: config, log: logger, started: time.Now(),
+		rooms: make(map[string]*session), uploads: make(chan struct{}, min(8, config.MaxSessions))}
+}
+
+// tag identifies a session in logs without reproducing the full room id.
+// The room is already visible in any reverse-proxy access log; this keeps the
+// relay's own log useful for correlation without widening that exposure.
+func tag(room string) string {
+	if len(room) > 8 {
+		return room[:8]
+	}
+	return room
+}
+
+// levelsLocked reports the current water marks for log lines. Caller holds mu.
+func (r *Relay) levelsLocked() (int, int64) {
+	return len(r.rooms), r.stored
 }
 
 func (r *Relay) Active() int {
@@ -79,6 +106,7 @@ func (r *Relay) expireLocked() {
 		if !now.Before(s.expires) {
 			r.stored -= int64(len(s.blob))
 			delete(r.rooms, room)
+			r.log.Info("session expired", "room", tag(room), "bytes", len(s.blob), "claimed", s.claimed)
 		}
 	}
 }
@@ -95,7 +123,12 @@ func equal(a, b string) bool {
 func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if req.URL.Path == "/healthz" && req.Method == http.MethodGet {
+		// Body added so an operator can tell a live process from a stale proxy
+		// cache or a listener that accepts but no longer serves. Session counts
+		// are deliberately omitted: this endpoint is unauthenticated.
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{"status":"ok","uptime_seconds":%d}`+"\n", int64(time.Since(r.started).Seconds()))
 		return
 	}
 	path := strings.TrimPrefix(req.URL.Path, "/v1/handoffs/")
@@ -130,16 +163,19 @@ func (r *Relay) put(w http.ResponseWriter, req *http.Request, room string) {
 	case r.uploads <- struct{}{}:
 		defer func() { <-r.uploads }()
 	default:
+		r.log.Warn("upload rejected", "room", tag(room), "reason", "busy")
 		http.Error(w, "relay busy", http.StatusServiceUnavailable)
 		return
 	}
 	claim, status := req.Header.Get("X-Handoff-Claim"), req.Header.Get("X-Handoff-Status")
 	if !validToken(claim) || !validToken(status) || claim == status {
+		r.log.Warn("upload rejected", "room", tag(room), "reason", "malformed tokens")
 		http.Error(w, "invalid transfer", http.StatusBadRequest)
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, req.Body, MaxBlob))
 	if err != nil || len(body) < 29 {
+		r.log.Warn("upload rejected", "room", tag(room), "reason", "invalid or oversized body", "bytes", len(body))
 		http.Error(w, "invalid or oversized transfer", http.StatusBadRequest)
 		return
 	}
@@ -151,10 +187,15 @@ func (r *Relay) put(w http.ResponseWriter, req *http.Request, room string) {
 		return
 	}
 	if _, exists := r.rooms[room]; exists {
+		r.log.Warn("upload rejected", "room", tag(room), "reason", "code collision")
 		http.Error(w, "code collision", http.StatusConflict)
 		return
 	}
 	if len(r.rooms) >= r.config.MaxSessions || r.stored+int64(len(body)) > r.config.MaxStoredBytes {
+		active, stored := r.levelsLocked()
+		r.log.Warn("upload rejected", "room", tag(room), "reason", "relay full",
+			"active", active, "max_sessions", r.config.MaxSessions,
+			"stored", stored, "max_stored", r.config.MaxStoredBytes, "wanted", len(body))
 		http.Error(w, "relay full", http.StatusServiceUnavailable)
 		return
 	}
@@ -169,6 +210,9 @@ func (r *Relay) put(w http.ResponseWriter, req *http.Request, room string) {
 			delete(r.rooms, room)
 		}
 	})
+	active, stored := r.levelsLocked()
+	r.log.Info("stored", "room", tag(room), "bytes", len(body), "ttl", r.config.TTL,
+		"active", active, "stored_total", stored)
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -187,6 +231,7 @@ func (r *Relay) claim(w http.ResponseWriter, req *http.Request, room string) {
 	s := r.rooms[room]
 	if s == nil || s.claimed || !validToken(token) || !equal(token, s.claim) {
 		r.mu.Unlock()
+		r.log.Warn("claim denied", "room", tag(room))
 		http.NotFound(w, req)
 		return
 	}
@@ -194,7 +239,9 @@ func (r *Relay) claim(w http.ResponseWriter, req *http.Request, room string) {
 	blob := s.blob
 	s.blob = nil
 	r.stored -= int64(len(blob))
+	active, stored := r.levelsLocked()
 	r.mu.Unlock()
+	r.log.Info("claimed", "room", tag(room), "bytes", len(blob), "active", active, "stored_total", stored)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", stringLength(len(blob)))
 	w.WriteHeader(http.StatusOK)
@@ -218,6 +265,7 @@ func (r *Relay) ack(w http.ResponseWriter, req *http.Request, room string) {
 	}
 	// The relay cannot verify the end-to-end MAC. The sender does that.
 	s.receipt = string(body)
+	r.log.Info("receipt posted", "room", tag(room))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -239,6 +287,8 @@ func (r *Relay) status(w http.ResponseWriter, req *http.Request, room string) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(s.receipt))
 	delete(r.rooms, room)
+	active, stored := r.levelsLocked()
+	r.log.Info("session complete", "room", tag(room), "active", active, "stored_total", stored)
 }
 
 func stringLength(n int) string {

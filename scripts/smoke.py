@@ -3,6 +3,7 @@
 import hashlib
 import json
 import pathlib
+import re
 import select
 import subprocess
 import tempfile
@@ -30,7 +31,13 @@ def main():
             source.write_text("# 文档交接\n\n已完成初稿，下一步核对标题。\n", encoding="utf-8")
             relay = subprocess.Popen([str(BIN), "relay", "--listen", "127.0.0.1:0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=tmp)
             processes.append(relay)
-            address = first_line(relay).split()[3]
+            # Match the structured log field by name. Counting words breaks
+            # whenever the startup line gains a field.
+            banner = first_line(relay)
+            found = re.search(r"\baddr=(\S+)", banner)
+            if not found:
+                raise RuntimeError(f"relay did not report a listen address: {banner!r}")
+            address = found.group(1)
             url = "http://" + address
             sender = subprocess.run([str(BIN), "send", "--json", "--relay", url, str(source)], capture_output=True, text=True, timeout=15, cwd=tmp)
             assert sender.returncode == 0, sender.stdout + sender.stderr
