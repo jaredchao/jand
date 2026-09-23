@@ -105,7 +105,7 @@ python3 scripts/chat_smoke.py https://你的域名               # 公网对话�
 make release                                               # 或 python3 scripts/release.py --targets linux-amd64,macos-arm64
 ```
 
-跨平台包生成到 `dist/releases/`。
+跨平台包生成到 `dist/releases/`。部署后用 `curl -fsS https://你的域名/healthz` 查看线上 Relay 的 `version` 和 `chat_features`（0.4.1 起）。
 
 macOS 二进制可以签名和公证。两者都不做时自动跳过，并在 `BUILD-INFO.json` 与包内说明里如实标注：
 

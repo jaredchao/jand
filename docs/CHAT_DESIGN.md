@@ -70,7 +70,7 @@ Agent 判断达成，是正常的出口；预算耗尽，是 Agent 判断失灵�
 
 消息明文是一个 JSON 信封 `{"kind", "reply_to", "supersedes", "text"}`，和正文一起加密，Relay 看不到类型。`kind` 取 `note`（默认）、`progress`、`request`、`reply`、`delivery`；`reply` 必须带 `reply_to`，其他类型可选。每条消息的编号由发送方角色首字母加计数构成（`h3` 为发起方第 3 个加密载荷，`g2` 为接收方第 2 个），双方无需协商就能算出同一个编号。`reply_to` 只能指向对方的消息；收到格式不对的信封时按 `note` 显示原文，不丢弃。
 
-**先读再回**：客户端发 reply、request、delivery 之前，先以 `wait=0` 查看 Relay 上还没取回的事件（不推进游标，必要时在本地解密看类型），加上本地因 `--wake` 暂存的事件。只要有对方的 request、reply、delivery、done 或 proposal 未读，就拒绝发送（退出码 5），除非加 `--anyway`。progress 和 note 不算，否则 `--wake` 就没法用了。这针对的是 0.3.2 实测中四次消息交叉：每次都是一方在没读到对方新版本时就回复了旧版本。
+**先读再回**：客户端发 reply、request、delivery 之前，先以 `wait=0` 查看 Relay 上还没取回的事件（不推进游标，必要时在本地解密看类型），加上本地因 `--wake` 暂存的事件。只要有对方的 request、reply、delivery、done 或 proposal 未读，就拒绝发送（退出码 5），除非加 `--anyway`。progress 和 note 不算：它们不要求对方做事，而且 progress 正是 `--wake` 要暂存的类型，算进去的话用了 `--wake` 就永远发不出回复。note 即使其实是没标注的请求，也总会唤醒对方（见下文），对方会及时读到。这针对的是 0.3.2 实测中四次消息交叉：每次都是一方在没读到对方新版本时就回复了旧版本。
 
 **取代关系**：信封可带 `supersedes`（仅 delivery，只能指向己方的消息）。接收方记住「旧编号 → 新编号」，回复被取代的交付时被拒；发送方收到对方针对自己已取代交付的回复时，事件带 `stale=true` 与 `superseded_by`。两者都只在客户端，Relay 不参与。
 

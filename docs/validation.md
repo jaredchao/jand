@@ -109,3 +109,4 @@
 - `recv --wake` 不再暂存 `note`：它是没选类型时的默认值，可能其实是没标注的请求。现在只有明确选了、又不在唤醒列表里的类型（主要是 progress）会被暂存。
 - AGENT.md 补充 Claude Code 放行 jand 的写法（`permissions.allow` 中的 `Bash(路径:*)`），并强调放行不改变「不可信、先问用户」的契约。
 - `go test -race`、`go vet`、`make smoke`（18 项）、`compat_smoke.py` 通过。
+- 发布后，毛仔用 Release 中的 `jand-0.4.1-relay-deploy.zip` 重新部署公网 Relay。`/healthz` 返回 `"version":"0.4.1"` 与完整的 `chat_features`，公网 `chat_smoke.py`（13 项）与 `remote_smoke.py` 通过。`feat/chat` 已合入 main 并删除；此后新功能从 main 切分支开发，完成后合回并删除分支。
