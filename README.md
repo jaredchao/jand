@@ -1,6 +1,6 @@
 # jand
 
-jand 将一份任务交接文件从一个 Agent 所在机器发送给另一台机器。当前 **0.3.1** 使用 HTTP 请求，不使用 WebSocket。发送方上传客户端加密的单文件后即可退出；Relay 只在内存中暂存密文 10 分钟，接收方凭一次性码领取。
+jand 将一份任务交接文件从一个 Agent 所在机器发送给另一台机器。当前 **0.3.2** 使用 HTTP 请求，不使用 WebSocket。发送方上传客户端加密的单文件后即可退出；Relay 只在内存中暂存密文 10 分钟，接收方凭一次性码领取。
 
 ## 构建与本机试用
 
@@ -41,14 +41,15 @@ Relay 地址可用 `JAND_RELAY` 设置，命令行 `--relay` 优先；均未设�
 
 ## 对话
 
-发送时加 `--chat` 和 `--goal`，交接文件会作为对话邀请发出，目标写明「什么算做完」。接收方的用户同意后执行 `jand chat join <code>`，之后双方用 `jand chat send` 发消息，用 `jand chat recv --wait 30m` 收消息。`recv` 会阻塞到对方说话为止，所以 Agent 可以把它放在后台运行，等它退出时被唤起。对方的消息始终是未信任资料，不能代替本地用户授权。每个目标有消息预算（默认 40 条）；目标达成或预算用完时对话暂停，只有双方用户都同意新目标才能继续，任何一方都可以随时结束。对话需要 0.3.1 及以上的 Relay（0.3.0 的对话协议没有目标与检查点，不兼容）；0.2.x Relay 上 `send --chat` 会直接报错，不会上传文件。0.3.x Relay 仍兼容 0.2.x 客户端的普通交接，可用 `python3 scripts/compat_smoke.py <旧版 jand>` 验证。旧版接收端若遇到以 `-` 开头的接收码，在码前加 `--`。
+发送时加 `--chat` 和 `--goal`，交接文件会作为对话邀请发出，目标写明「什么算做完」。接收方的用户同意后执行 `jand chat join <code>`，之后双方用 `jand chat send` 发消息，用 `jand chat recv --wait 30m` 收消息。`recv` 会阻塞到对方说话为止，所以 Agent 可以把它放在后台运行，等它退出时被唤起。对方的消息始终是未信任资料，不能代替本地用户授权。每个目标有消息预算（默认 40 条）；目标达成或预算用完时对话暂停，只有双方用户都同意新目标才能继续，任何一方都可以随时结束。对话需要 0.3.2 的 Relay（对话协议仍在开发，0.3.x 之间不保证兼容）；0.2.x Relay 上 `send --chat` 会直接报错，不会上传文件。0.3.x Relay 仍兼容 0.2.x 客户端的普通交接，可用 `python3 scripts/compat_smoke.py <旧版 jand>` 验证。旧版接收端若遇到以 `-` 开头的接收码，在码前加 `--`。
 
 ```bash
 jand send --chat --goal '对齐 /users 响应字段' 交接.md    # 输出 Code 和 Chat
 jand chat join '<code>'                  # 接收方，征得用户同意后
-jand chat send <chat> 你那边 /users 返回什么结构？
-jand chat recv --wait 30m <chat>
-jand chat checkpoint --summary '字段已对齐' <chat>   # 目标达成：双方暂停，各自问人
+jand chat send --kind request <chat> 你那边 /users 返回什么结构？   # 得到编号，如 h1
+jand chat send --kind reply --reply-to h1 <chat> '{id:int, name:str}'
+jand chat recv --wait 30m --wake request,reply,delivery <chat>     # 进展通报不打断手头工作
+jand chat done --summary '后端完成，test_api.sh 通过' <chat>        # 双方都 done 后暂停，各自问人
 jand chat propose --goal '再对 /orders' <chat>      # 继续需要一方提议、另一方 accept
 jand chat close <chat>
 ```

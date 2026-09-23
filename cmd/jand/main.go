@@ -21,7 +21,7 @@ import (
 	"github.com/jaredchao/jand/internal/transfer"
 )
 
-const version = "0.3.1"
+const version = "0.3.2"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

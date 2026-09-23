@@ -65,3 +65,14 @@
 - AGENT.md 修正「一次性」表述，补充带邀请的 `saved` 示例、目标写法、检查点规则与宿主权限说明。
 - 目标放在包头元数据内，受 0.2.x 的 2048 字节上限约束（目标限 1 KiB），因此旧接收端仍能按普通交接保存。
 - `go test -race`、`go vet`、`make smoke`（含检查点流程）、`compat_smoke.py` 通过。
+
+## 0.3.2：协作而非聊天
+
+依据 0.3.1 公网协作实测（待办应用，前后端两个 Claude Code 会话，约 7 分钟、6 条消息）暴露的问题修改。
+
+- 各自报告完成：新增 `chat done` 与 `/v1/chats/{room}/done`。一方完成只通知对方、不暂停；双方都完成时 Relay 发出 `checkpoint`（`reason=all_done`）。原 `checkpoint` 保留为「立即暂停、请用户决定」。实测中「双方各自 checkpoint」会被 409 拒绝的问题由此解决。
+- 消息类型与编号：消息明文改为加密信封 `{kind, reply_to, text}`，类型为 note/progress/request/reply/delivery，编号如 `h3`、`g2` 由角色与计数算出；`reply` 必须带 `reply_to`。实测中「答复被标成进展」「消息交叉无法对应」由此有了协议层依据。
+- 按类型唤醒：`recv --wake KINDS` 在客户端暂缓非唤醒类型的消息（随游标持久化），遇到唤醒类型、非消息事件或超时再按序输出。实测中 3 次仅为进展的唤醒可以避免。
+- AGENT.md 新增「协作」一节（干活为主、卡住发请求、共享资源归属、不越界），交接模板新增「Collaboration」一节；接收码放在回复末尾。
+- `go test -race`、`go vet`、`make smoke`（新增进展暂缓、reply_to、双方完成暂停）通过。
+- 仍未验证：Agent 正在连续调用工具时被后台 `recv` 唤醒的时机。

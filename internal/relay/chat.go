@@ -16,8 +16,9 @@ import (
 // each poll for their own events. The relay sees derived tokens, sizes and
 // timing, never the transfer code, the message key, the goal or plaintext.
 //
-// A chat works toward one goal at a time with a message budget. When either
-// agent reports the goal reached, or the budget runs out, the room pauses:
+// A chat works toward one goal at a time with a message budget. Each party
+// reports its own share done; once both have, or either calls an immediate
+// checkpoint, or the budget runs out, the room pauses:
 // no messages pass until one side proposes a goal and the other accepts it,
 // each after asking its own user. The relay enforces the pause; it cannot
 // read the goal, only count.
@@ -54,8 +55,9 @@ type chatRoom struct {
 	seq                 uint64
 	queue               map[string][]chatEvent // keyed by recipient role
 	bytes               int64
-	messages            int // over the whole chat, against ChatMaxMessages
-	budget, used        int // for the current goal
+	messages            int             // over the whole chat, against ChatMaxMessages
+	budget, used        int             // for the current goal
+	done                map[string]bool // parties that reported their share of the goal done
 	proposal            *chatEvent
 	waiters             int
 	notify              chan struct{}
@@ -164,7 +166,7 @@ func (r *Relay) serveChat(w http.ResponseWriter, req *http.Request, path string)
 		r.chatEvents(w, req, room)
 	case req.Method == http.MethodPost && (action == "opened" || action == "join" || action == "decline"):
 		r.chatInvite(w, req, room, action)
-	case req.Method == http.MethodPost && (action == "messages" || action == "checkpoint" || action == "propose" || action == "accept" || action == "close"):
+	case req.Method == http.MethodPost && (action == "messages" || action == "checkpoint" || action == "done" || action == "propose" || action == "accept" || action == "close"):
 		r.chatParty(w, req, room, action)
 	default:
 		http.NotFound(w, req)
@@ -220,7 +222,7 @@ func (r *Relay) chatCreate(w http.ResponseWriter, req *http.Request, room string
 	}
 	now := time.Now()
 	r.chats[room] = &chatRoom{host: body.Host, invite: body.Invite, state: chatPending, created: now, changed: now,
-		budget: body.Budget, queue: map[string][]chatEvent{}, notify: make(chan struct{})}
+		budget: body.Budget, queue: map[string][]chatEvent{}, done: map[string]bool{}, notify: make(chan struct{})}
 	r.log.Info("chat created", "room", tag(room), "budget", body.Budget, "chats", len(r.chats))
 	w.WriteHeader(http.StatusCreated)
 }
@@ -332,7 +334,7 @@ func (r *Relay) chatParty(w http.ResponseWriter, req *http.Request, room, action
 	switch action {
 	case "messages", "propose":
 		valid = valid && body.sealed(false)
-	case "checkpoint":
+	case "checkpoint", "done":
 		valid = valid && body.sealed(true)
 	}
 	if action == "propose" && body.Budget == 0 {
@@ -412,6 +414,30 @@ func (r *Relay) chatParty(w http.ResponseWriter, req *http.Request, room, action
 		r.pushLocked(c, peer, chatEvent{Type: "checkpoint", From: from, Reason: "goal_reached", Ctr: body.Ctr, Data: body.Data})
 		r.setStateLocked(c, chatPaused)
 		r.log.Info("chat checkpoint", "room", tag(room), "reason", "goal_reached", "by", from)
+	case "done":
+		// One party finishing is news, not a pause: the other may still be
+		// working or need something. The pause comes when both are done.
+		if c.state != chatActive {
+			http.Error(w, "chat is paused", http.StatusConflict)
+			return
+		}
+		if c.done[from] {
+			http.Error(w, "already reported done for this goal", http.StatusConflict)
+			return
+		}
+		c.done[from] = true
+		r.pushLocked(c, peer, chatEvent{Type: "done", From: from, Ctr: body.Ctr, Data: body.Data})
+		c.changed = time.Now()
+		if c.done[peer] {
+			for _, role := range []string{"host", "guest"} {
+				r.pushLocked(c, role, chatEvent{Type: "checkpoint", Reason: "all_done"})
+			}
+			c.state = chatPaused
+			r.log.Info("chat checkpoint", "room", tag(room), "reason", "all_done")
+		} else {
+			r.log.Info("chat party done", "room", tag(room), "by", from)
+		}
+		c.wake()
 	case "propose":
 		if c.state != chatPaused {
 			http.Error(w, "goals can only be proposed at a checkpoint", http.StatusConflict)
@@ -432,6 +458,7 @@ func (r *Relay) chatParty(w http.ResponseWriter, req *http.Request, room, action
 			r.pushLocked(c, role, chatEvent{Type: "resumed", From: p.From, Ctr: p.Ctr, Data: p.Data, Budget: p.Budget})
 		}
 		c.budget, c.used, c.proposal = p.Budget, 0, nil
+		clear(c.done)
 		r.setStateLocked(c, chatActive)
 		r.log.Info("chat resumed", "room", tag(room), "accepted_by", from, "budget", c.budget)
 	}

@@ -50,6 +50,61 @@ type chatState struct {
 	Key   string `json:"key"`
 }
 
+// MessageKinds are the purposes a message can declare. The kind travels
+// inside the encrypted payload; the relay never sees it.
+var MessageKinds = []string{"note", "progress", "request", "reply", "delivery"}
+
+// ChatMessage is the plaintext of one message. A request expects an answer:
+// a reply (or delivery) naming it in ReplyTo. Progress and notes expect none.
+type ChatMessage struct {
+	Kind    string `json:"kind"`
+	ReplyTo string `json:"reply_to,omitempty"`
+	Text    string `json:"text"`
+}
+
+// messageID names a party's payload by role initial and counter, e.g. g2.
+func messageID(role string, ctr uint64) string {
+	return role[:1] + strconv.FormatUint(ctr, 10)
+}
+
+// validRef reports whether ref names one of the given role's payloads.
+func validRef(ref, role string) bool {
+	if len(ref) < 2 || ref[:1] != role[:1] || ref[1] == '0' {
+		return false
+	}
+	n, err := strconv.ParseUint(ref[1:], 10, 64)
+	return err == nil && n > 0 && strconv.FormatUint(n, 10) == ref[1:]
+}
+
+func knownKind(kind string) bool {
+	for _, k := range MessageKinds {
+		if k == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// parseMessage reads a peer payload. Anything that is not a well-formed
+// envelope is shown as a plain note rather than dropped.
+func parseMessage(plain, peer string) ChatMessage {
+	var m ChatMessage
+	if json.Unmarshal([]byte(plain), &m) != nil || !knownKind(m.Kind) {
+		return ChatMessage{Kind: "note", Text: plain}
+	}
+	if m.ReplyTo != "" && !validRef(m.ReplyTo, other(peer)) {
+		m.ReplyTo = ""
+	}
+	return m
+}
+
+func other(role string) string {
+	if role == "host" {
+		return "guest"
+	}
+	return "host"
+}
+
 // cursor and counter live in separate files so a background recv and a
 // foreground send never overwrite each other's progress.
 type chatCursor struct {
@@ -59,6 +114,9 @@ type chatCursor struct {
 	Proposal       uint64 `json:"proposal,omitempty"`
 	ProposalGoal   string `json:"proposal_goal,omitempty"`
 	ProposalBudget int    `json:"proposal_budget,omitempty"`
+	// Held are events already taken from the relay but not yet shown,
+	// because recv was told to wake only for certain message kinds.
+	Held []Event `json:"held,omitempty"`
 }
 
 type chatCounter struct {
@@ -89,10 +147,7 @@ func randomToken() (string, error) {
 }
 
 func (s *chatState) peer() string {
-	if s.Role == "host" {
-		return "guest"
-	}
-	return "host"
+	return other(s.Role)
 }
 
 func (s *chatState) path(dir, suffix string) string {
@@ -422,14 +477,26 @@ func ChatDecline(ctx context.Context, rawCode, reason string, opts Options) erro
 }
 
 type transcriptLine struct {
-	Time string `json:"time"`
-	From string `json:"from"`
-	Kind string `json:"kind"`
-	Text string `json:"text,omitempty"`
+	Time    string `json:"time"`
+	From    string `json:"from"`
+	Kind    string `json:"kind"`
+	ID      string `json:"id,omitempty"`
+	Type    string `json:"type,omitempty"` // a message's declared kind
+	ReplyTo string `json:"reply_to,omitempty"`
+	Text    string `json:"text,omitempty"`
 }
 
 func (s *chatState) record(dir, from, kind, text string) {
-	line, _ := json.Marshal(transcriptLine{time.Now().UTC().Format(time.RFC3339), from, kind, text})
+	s.writeRecord(dir, transcriptLine{From: from, Kind: kind, Text: text})
+}
+
+func (s *chatState) recordMessage(dir, from, id string, m ChatMessage) {
+	s.writeRecord(dir, transcriptLine{From: from, Kind: "message", ID: id, Type: m.Kind, ReplyTo: m.ReplyTo, Text: m.Text})
+}
+
+func (s *chatState) writeRecord(dir string, l transcriptLine) {
+	l.Time = time.Now().UTC().Format(time.RFC3339)
+	line, _ := json.Marshal(l)
 	f, err := os.OpenFile(s.path(dir, ".transcript.jsonl"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
 	if err != nil {
 		return
@@ -438,28 +505,47 @@ func (s *chatState) record(dir, from, kind, text string) {
 	f.Close()
 }
 
-func ChatSend(ctx context.Context, id, text string, opts Options) error {
+// ChatSend sends one message. An empty kind means note; a reply must name
+// the peer message it answers, and any other kind may name one too.
+func ChatSend(ctx context.Context, id string, m ChatMessage, opts Options) error {
 	o := opts.defaults()
 	s, err := loadChat(o.StateDir, id)
 	if err != nil {
 		return err
 	}
-	if err = checkText(text); err != nil {
+	if m.Kind == "" {
+		m.Kind = "note"
+	}
+	if !knownKind(m.Kind) {
+		return fmt.Errorf("unknown message kind %q; use one of %s", m.Kind, strings.Join(MessageKinds, ", "))
+	}
+	if m.Kind == "reply" && m.ReplyTo == "" {
+		return errors.New("a reply must name the message it answers (--reply-to, e.g. " + s.peer()[:1] + "3)")
+	}
+	if m.ReplyTo != "" && !validRef(m.ReplyTo, s.peer()) {
+		return fmt.Errorf("--reply-to must be a message id from the peer, such as %s3", s.peer()[:1])
+	}
+	if err = checkText(m.Text); err != nil {
 		return err
+	}
+	payload, _ := json.Marshal(m)
+	if len(payload) > MaxChatText {
+		return fmt.Errorf("message exceeds %d bytes", MaxChatText)
 	}
 	key, err := s.key()
 	if err != nil {
 		return err
 	}
-	body, err := s.seal(o.StateDir, key, "message", text)
+	body, err := s.seal(o.StateDir, key, "message", string(payload))
 	if err != nil {
 		return err
 	}
 	if err = s.post(ctx, "messages", body, http.StatusCreated); err != nil {
 		return err
 	}
-	s.record(o.StateDir, s.Role, "message", text)
-	o.Emit(Event{Event: "sent", Chat: s.ID, Size: int64(len(text))})
+	msgID := messageID(s.Role, body["ctr"].(uint64))
+	s.recordMessage(o.StateDir, s.Role, msgID, m)
+	o.Emit(Event{Event: "sent", Chat: s.ID, ID: msgID, Kind: m.Kind, ReplyTo: m.ReplyTo, Size: int64(len(m.Text))})
 	return nil
 }
 
@@ -502,9 +588,20 @@ func (s *chatState) post(ctx context.Context, action string, body any, want int)
 	return nil
 }
 
-// ChatCheckpoint reports that this side considers the goal reached. The chat
-// pauses until a new goal is proposed and accepted, or someone closes it.
+// ChatCheckpoint pauses the chat at once, for both sides: use it when the
+// users must decide now. When this side has merely finished its share of
+// the goal, use ChatDone instead.
 func ChatCheckpoint(ctx context.Context, id, summary string, opts Options) error {
+	return pause(ctx, id, summary, "checkpoint", opts)
+}
+
+// ChatDone reports that this side's share of the goal is finished. The peer
+// is told; the chat pauses only once both sides have reported done.
+func ChatDone(ctx context.Context, id, summary string, opts Options) error {
+	return pause(ctx, id, summary, "done", opts)
+}
+
+func pause(ctx context.Context, id, summary, action string, opts Options) error {
 	o := opts.defaults()
 	s, err := loadChat(o.StateDir, id)
 	if err != nil {
@@ -517,17 +614,21 @@ func ChatCheckpoint(ctx context.Context, id, summary string, opts Options) error
 			err = checkText(summary)
 		}
 		if err == nil {
-			body, err = s.seal(o.StateDir, key, "checkpoint", summary)
+			body, err = s.seal(o.StateDir, key, action, summary)
 		}
 		if err != nil {
 			return err
 		}
 	}
-	if err = s.post(ctx, "checkpoint", body, http.StatusNoContent); err != nil {
+	if err = s.post(ctx, action, body, http.StatusNoContent); err != nil {
 		return err
 	}
-	s.record(o.StateDir, s.Role, "checkpoint", summary)
-	o.Emit(Event{Event: "checkpoint", Chat: s.ID, By: "self", Reason: "goal_reached", Text: summary})
+	s.record(o.StateDir, s.Role, action, summary)
+	e := Event{Event: action, Chat: s.ID, By: "self", Text: summary}
+	if action == "checkpoint" {
+		e.Reason = "goal_reached"
+	}
+	o.Emit(e)
 	return nil
 }
 
@@ -607,9 +708,27 @@ type relayEvent struct {
 	Budget int    `json:"budget"`
 }
 
+// wakes reports whether an event should end a recv that was told to wake
+// only for some message kinds. Every non-message event wakes.
+func wakes(e Event, kinds []string) bool {
+	if len(kinds) == 0 || e.Event != "message" {
+		return true
+	}
+	for _, k := range kinds {
+		if k == e.Kind {
+			return true
+		}
+	}
+	return false
+}
+
 // ChatRecv emits pending events. With wait > 0 it blocks until at least one
 // event arrives or wait elapses, in which case it emits no_events.
-func ChatRecv(ctx context.Context, id string, wait time.Duration, opts Options) error {
+//
+// With wake set, messages of other kinds do not end the wait: they are held
+// (persisted with the cursor) and emitted, in order, with the next event
+// that does wake, or when the wait runs out.
+func ChatRecv(ctx context.Context, id string, wait time.Duration, wake []string, opts Options) error {
 	o := opts.defaults()
 	s, err := loadChat(o.StateDir, id)
 	if err != nil {
@@ -651,14 +770,26 @@ func ChatRecv(ctx context.Context, id string, wait time.Duration, opts Options) 
 		if err != nil {
 			return fmt.Errorf("invalid relay response: %w", err)
 		}
-		if len(page.Events) > 0 {
-			for _, e := range page.Events {
-				if e.Seq <= cur.After {
-					continue
-				}
-				o.Emit(s.translate(o.StateDir, key, &cur, e))
-				cur.After = e.Seq
+		woken := false
+		for _, e := range page.Events {
+			if e.Seq <= cur.After {
+				continue
 			}
+			ev := s.translate(o.StateDir, key, &cur, e)
+			cur.Held = append(cur.Held, ev)
+			woken = woken || wakes(ev, wake)
+			cur.After = e.Seq
+		}
+		if len(page.Events) > 0 {
+			if err := writeJSONFile(s.path(o.StateDir, ".cursor"), cur); err != nil {
+				return err
+			}
+		}
+		if len(cur.Held) > 0 && (woken || poll == 0 || page.State == "ended") {
+			for _, ev := range cur.Held {
+				o.Emit(ev)
+			}
+			cur.Held = nil
 			return writeJSONFile(s.path(o.StateDir, ".cursor"), cur)
 		}
 		if page.State == "ended" {
@@ -712,28 +843,31 @@ func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relay
 		} else {
 			s.record(dir, s.peer(), "closed", "")
 		}
-	case "checkpoint":
-		out.Event, out.Reason = "checkpoint", e.Reason
-		if e.Reason == "budget" {
-			// Relay-enforced: the goal's message budget is spent.
+	case "checkpoint", "done":
+		out.Event, out.Reason = e.Type, e.Reason
+		if e.Type == "checkpoint" && e.From == "" {
+			// Relay-enforced: the budget is spent, or both sides are done.
+			if e.Reason != "budget" && e.Reason != "all_done" {
+				return fail("unexpected checkpoint event from relay")
+			}
 			out.By = "relay"
-			s.record(dir, "relay", "checkpoint", "budget")
+			s.record(dir, "relay", "checkpoint", e.Reason)
 			return out
 		}
 		out.By, out.From = "peer", s.peer()
 		if e.From != s.peer() {
-			return fail("unexpected checkpoint event from relay")
+			return fail("unexpected " + e.Type + " event from relay")
 		}
 		if e.Data == "" {
-			s.record(dir, s.peer(), "checkpoint", "")
+			s.record(dir, s.peer(), e.Type, "")
 			return out
 		}
-		text, bad := s.openPeer(key, cur, e, "checkpoint")
+		text, bad := s.openPeer(key, cur, e, e.Type)
 		if bad != "" {
 			return fail(bad)
 		}
 		out.Text, out.Untrusted = text, true
-		s.record(dir, s.peer(), "checkpoint", text)
+		s.record(dir, s.peer(), e.Type, text)
 	case "proposal":
 		goal, bad := s.openPeer(key, cur, e, "proposal")
 		if bad != "" {
@@ -775,8 +909,15 @@ func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relay
 		if bad != "" {
 			return fail(bad)
 		}
-		out.Text, out.Untrusted = text, true
-		s.record(dir, s.peer(), e.Type, text)
+		out.Untrusted = true
+		if kind == "decline" {
+			out.Text = text
+			s.record(dir, s.peer(), e.Type, text)
+			break
+		}
+		m := parseMessage(text, e.From)
+		out.ID, out.Kind, out.ReplyTo, out.Text = messageID(e.From, e.Ctr), m.Kind, m.ReplyTo, m.Text
+		s.recordMessage(dir, s.peer(), out.ID, m)
 	default:
 		return fail("unknown event from relay")
 	}

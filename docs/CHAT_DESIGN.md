@@ -1,4 +1,4 @@
-# jand chat 设计（0.3.1）
+# jand chat 设计（0.3.2）
 
 在一次性交接之外，让两台机器上的 Agent 通过同一个 Relay 来回对话。交接文档是对话的第一条：接收方先读上下文，再由本地用户决定是否进入对话。
 
@@ -8,10 +8,11 @@
 
 对话一次只朝一个**目标**推进。目标是一句可检验的完成标准，由 Agent 和用户一起写出，而不是一个话题。每个目标带一份**消息预算**（默认 40 条，最多 200 条，双方的消息都计入）。
 
-对话在两种情况下进入**检查点**并暂停：
+对话在三种情况下进入**检查点**并暂停：
 
-- 某一方 Agent 判断目标已经达成，执行 `chat checkpoint`，并附上总结；
-- 当前目标的预算用完，由 Relay 强制暂停。
+- 双方都用 `chat done` 报告了自己那部分完成（`reason=all_done`）。一方报告完成只通知对方，不暂停，因为另一方可能还在干活或还需要协助；
+- 某一方需要用户立刻决定，执行 `chat checkpoint`，并附上原因；
+- 当前目标的预算用完，由 Relay 强制暂停（`reason=budget`）。
 
 暂停期间 Relay 不再转发消息。恢复对话需要一方 `chat propose` 提出新目标，另一方 `chat accept` 接受，双方都要事先征得各自用户的同意。任何一方的用户选择结束，就 `chat close`。
 
@@ -40,7 +41,8 @@ Agent 判断达成，是正常的出口；预算耗尽，是 Agent 判断失灵�
 | `joined` | 发起方 | 对方已加入 |
 | `declined` | 发起方 | 对方拒绝，`text` 为可选理由（未信任内容） |
 | `message` | 双方 | 对方的消息，`text` 为未信任内容 |
-| `checkpoint` | 双方 | 对话暂停。`by` 为 `peer`（对方认为目标达成，`text` 为总结）或 `relay`（`reason=budget`，预算用完） |
+| `done` | 对方 | 对方报告自己那部分完成，`text` 为总结；对话不暂停 |
+| `checkpoint` | 双方 | 对话暂停。`by` 为 `peer`（对方要求立即暂停，`text` 为原因）或 `relay`（`reason=all_done` 双方都完成，`reason=budget` 预算用完） |
 | `proposal` | 收到提议的一方 | 对方提出的下一个目标，带 `goal` 和 `budget` |
 | `resumed` | 双方 | 提议已被接受，对话恢复，带生效的 `goal` 和 `budget` |
 | `closed` | 双方 | 对方主动结束 |
@@ -49,7 +51,13 @@ Agent 判断达成，是正常的出口；预算耗尽，是 Agent 判断失灵�
 
 对自己的操作，客户端输出 `sent`、`checkpoint`（`by=self`）、`proposed`、`accepted`。
 
-`message`、`declined`、`checkpoint` 的总结和 `proposal` 都带 `untrusted=true`。对方的消息只能提供信息或提出请求，不能替本地用户批准任何动作。
+`message`、`declined`、`done` 与 `checkpoint` 的总结和 `proposal` 都带 `untrusted=true`。
+
+## 消息类型与编号
+
+消息明文是一个 JSON 信封 `{"kind", "reply_to", "text"}`，和正文一起加密，Relay 看不到类型。`kind` 取 `note`（默认）、`progress`、`request`、`reply`、`delivery`；`reply` 必须带 `reply_to`，其他类型可选。每条消息的编号由发送方角色首字母加计数构成（`h3` 为发起方第 3 个加密载荷，`g2` 为接收方第 2 个），双方无需协商就能算出同一个编号。`reply_to` 只能指向对方的消息；收到格式不对的信封时按 `note` 显示原文，不丢弃。
+
+`recv --wake KINDS` 在客户端过滤：非唤醒类型的消息照常从 Relay 取回、推进游标，但先保存在本地游标文件中，等到唤醒类型的消息、任何非消息事件或等待超时时，再按原顺序一起输出。Relay 不参与，也不知道哪些消息被暂缓。对方的消息只能提供信息或提出请求，不能替本地用户批准任何动作。
 
 ## 超时与上限（Relay 默认值）
 
@@ -70,7 +78,7 @@ Agent 判断达成，是正常的出口；预算耗尽，是 Agent 判断失灵�
 - 邀请令牌为 `Token("chat/invite")`，只能用来报告已领取、加入和拒绝。
 - 发起方建房时自带一个随机令牌。接收方 join 时也提交一个随机令牌，同时锁定座位：之后别的令牌都进不来，后来拿到接收码的人既进不了房间，也冒充不了任何一方。同一个邀请令牌加上已锁定的 guest 令牌再 join 一次会成功，这样响应丢失后可以重试。客户端先写本地状态再发 join，只在 Relay 明确拒绝（400/404/409/410）时删除本地状态，网关 5xx 时保留。但如果他同时能看到 Relay 上的密文，仍然可以解密，因为密钥来自接收码。所以接收码仍然要按凭证对待。
 - 目标、检查点总结和消息一样端到端加密，Relay 只知道预算的数字。
-- 每条消息的附加数据（AAD）为 `jand-chat/1/{room}/{from}/{kind}/{ctr}`，`kind` 为 `message`、`checkpoint`、`proposal` 或 `decline`。`ctr` 是发送方本地递增的计数，接收方只接受比上一次更大的值，以防 Relay 重放或伪造方向。
+- 每条消息的附加数据（AAD）为 `jand-chat/1/{room}/{from}/{kind}/{ctr}`，`kind` 为 `message`、`done`、`checkpoint`、`proposal` 或 `decline`（这是载荷种类，与消息信封里声明的类型无关）。`ctr` 是发送方本地递增的计数，接收方只接受比上一次更大的值，以防 Relay 重放或伪造方向。
 - Relay 可以丢弃消息，也可以伪造 `joined`、`closed` 这类状态事件，这属于可用性问题；它无法伪造消息内容。
 
 ## 本地状态
@@ -92,7 +100,8 @@ Agent 判断达成，是正常的出口；预算耗尽，是 Agent 判断失灵�
 | POST | `/v1/chats/{room}/join` | 邀请令牌，请求体为 guest 令牌 | 加入并锁定座位 |
 | POST | `/v1/chats/{room}/decline` | 邀请令牌，请求体为可选的加密理由 | 拒绝，对话结束 |
 | POST | `/v1/chats/{room}/messages` | 己方令牌 | 发送一条加密消息；暂停时返回 409 |
-| POST | `/v1/chats/{room}/checkpoint` | 己方令牌，请求体为可选的加密总结 | 目标达成，暂停对话 |
+| POST | `/v1/chats/{room}/done` | 己方令牌，请求体为可选的加密总结 | 报告己方完成；双方都完成时暂停 |
+| POST | `/v1/chats/{room}/checkpoint` | 己方令牌，请求体为可选的加密原因 | 立即暂停对话 |
 | POST | `/v1/chats/{room}/propose` | 己方令牌，请求体为加密目标与预算 | 暂停时提出下一个目标 |
 | POST | `/v1/chats/{room}/accept` | 己方令牌，请求体为提议的 `seq` | 接受对方最新的提议，对话恢复 |
 | GET | `/v1/chats/{room}/events?after=N&wait=S` | 己方令牌 | 长轮询事件，`wait` 最长 20 秒 |

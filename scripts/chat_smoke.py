@@ -51,21 +51,38 @@ def main():
             # The pattern an agent host uses: a background recv that exits
             # when the peer speaks.
             env = dict(os.environ, JAND_HOME=str(guest))
-            waiting = subprocess.Popen([str(BIN), "chat", "recv", "--json", "--wait", "2m", chat], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            waiting = subprocess.Popen([str(BIN), "chat", "recv", "--json", "--wait", "2m", "--wake", "request", chat], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            events(jand(host, "chat", "send", "--json", "--kind", "progress", chat, "前端骨架已完成"))
             time.sleep(1.5)
-            assert waiting.poll() is None, "recv returned before any message"
+            assert waiting.poll() is None, "progress woke a recv that waits for requests"
             sent_at = time.monotonic()
-            events(jand(host, "chat", "send", "--json", chat, "GET /users", "返回什么？"))
+            events(jand(host, "chat", "send", "--json", "--kind", "request", chat, "GET /users", "返回什么？"))
             out, err = waiting.communicate(timeout=10)
             woke = time.monotonic() - sent_at
             assert waiting.returncode == 0, out + err
-            message = json.loads(out.splitlines()[0])
-            assert message["event"] == "message" and message["text"] == "GET /users 返回什么？" and message["untrusted"] is True
+            held, message = [json.loads(line) for line in out.splitlines()]
+            assert held["kind"] == "progress" and held["id"] == "h1", held
+            assert message["event"] == "message" and message["kind"] == "request" and message["id"] == "h2"
+            assert message["text"] == "GET /users 返回什么？" and message["untrusted"] is True
 
-            reply = subprocess.run([str(BIN), "chat", "send", "--json", chat, "-"], input="[{\"id\":1}]\n", capture_output=True, text=True, timeout=15, env=env)
+            reply = subprocess.run([str(BIN), "chat", "send", "--json", "--kind", "reply", "--reply-to", "h2", chat, "-"], input="[{\"id\":1}]\n", capture_output=True, text=True, timeout=15, env=env)
             events(reply)
             got = events(jand(host, "chat", "recv", "--json", "--wait", "5s", chat))
-            assert got[0]["text"] == '[{"id":1}]', got
+            assert got[0]["text"] == '[{"id":1}]' and got[0]["reply_to"] == "h2", got
+
+            # Each side reports its share done; the relay pauses once both have.
+            events(jand(guest, "chat", "done", "--json", "--summary", "后端完成", chat))
+            got = events(jand(host, "chat", "recv", "--json", "--wait", "5s", chat))
+            assert got[0]["event"] == "done" and got[0]["text"] == "后端完成", got
+            events(jand(host, "chat", "done", "--json", chat))
+            for side in (host, guest):
+                got = events(jand(side, "chat", "recv", "--json", "--wait", "5s", chat))
+                assert got[-1]["event"] == "checkpoint" and got[-1]["reason"] == "all_done", got
+            events(jand(guest, "chat", "propose", "--json", "--goal", "补 /users 分页", chat))
+            events(jand(host, "chat", "recv", "--json", "--wait", "5s", chat))
+            events(jand(host, "chat", "accept", "--json", chat))
+            for side in (host, guest):
+                events(jand(side, "chat", "recv", "--json", "--wait", "5s", chat))
 
             # Goal reached: pause, the guest proposes the next goal, the host accepts.
             events(jand(host, "chat", "checkpoint", "--json", "--summary", "字段已对齐", chat))
@@ -88,8 +105,11 @@ def main():
             assert late.returncode == 4, late
 
             transcript = (host / "chats" / f"{chat}.transcript.jsonl").read_text(encoding="utf-8").splitlines()
-            assert len(transcript) == 6, transcript
+            kinds = [json.loads(line)["kind"] for line in transcript]
+            assert kinds == ["message", "message", "message", "done", "done", "checkpoint", "proposal", "resumed",
+                             "checkpoint", "proposal", "resumed", "closed"], kinds
             print(json.dumps({"invite_and_join": "passed", "background_recv_woken_by_peer": f"passed ({woke:.2f}s)",
+                              "progress_held_until_request": "passed", "reply_to": "passed", "both_done_pauses": "passed",
                               "stdin_message": "passed", "checkpoint_propose_accept": "passed",
                               "close_and_exit_code_4": "passed", "transcript": "passed"}, indent=2))
     finally:

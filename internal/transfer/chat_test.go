@@ -33,7 +33,7 @@ func newSide(t *testing.T, url string) *side {
 // recv returns the events one ChatRecv call emitted.
 func (s *side) recv(ctx context.Context, id string, wait time.Duration) ([]Event, error) {
 	s.events = nil
-	err := ChatRecv(ctx, id, wait, s.o)
+	err := ChatRecv(ctx, id, wait, nil, s.o)
 	return s.events, err
 }
 
@@ -82,7 +82,7 @@ func TestChatConversation(t *testing.T) {
 	if ev, err := host.recv(ctx, id[:8], 0); err != nil || types(ev) != "opened" {
 		t.Fatalf("host after claim: %v %v", types(ev), err)
 	}
-	if err := ChatSend(ctx, id, "too early", host.o); err == nil || !strings.Contains(err.Error(), "peer has not joined") {
+	if err := ChatSend(ctx, id, ChatMessage{Text: "too early"}, host.o); err == nil || !strings.Contains(err.Error(), "peer has not joined") {
 		t.Fatalf("send before join: %v", err)
 	}
 	if _, err := ChatJoin(ctx, rawCode, guest.o); err != nil {
@@ -95,7 +95,7 @@ func TestChatConversation(t *testing.T) {
 		t.Fatalf("host sees join: %v", types(ev))
 	}
 
-	if err := ChatSend(ctx, id, "GET /users 返回什么结构？", host.o); err != nil {
+	if err := ChatSend(ctx, id, ChatMessage{Text: "GET /users 返回什么结构？"}, host.o); err != nil {
 		t.Fatal(err)
 	}
 	ev, err := guest.recv(ctx, id, time.Second)
@@ -113,7 +113,7 @@ func TestChatConversation(t *testing.T) {
 	sent := make(chan error, 1)
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		sent <- ChatSend(ctx, id, "[{id, name}]", quiet)
+		sent <- ChatSend(ctx, id, ChatMessage{Text: "[{id, name}]"}, quiet)
 	}()
 	start := time.Now()
 	ev, err = host.recv(ctx, id, 30*time.Second)
@@ -136,7 +136,7 @@ func TestChatConversation(t *testing.T) {
 	if _, err := host.recv(ctx, id, 0); !errors.Is(err, ErrChatEnded) {
 		t.Fatalf("recv after end: %v", err)
 	}
-	if err := ChatSend(ctx, id, "late", host.o); !errors.Is(err, ErrChatEnded) {
+	if err := ChatSend(ctx, id, ChatMessage{Text: "late"}, host.o); !errors.Is(err, ErrChatEnded) {
 		t.Fatalf("send after end: %v", err)
 	}
 	transcript, err := os.ReadFile(host.o.StateDir + "/" + id + ".transcript.jsonl")
@@ -284,7 +284,7 @@ func TestChatJoinRetryAndChatIDMistake(t *testing.T) {
 	if _, err := ChatJoin(ctx, rawCode, guest.o); err != nil {
 		t.Fatalf("retried join: %v", err)
 	}
-	if err := ChatSend(ctx, id, "在吗", guest.o); err != nil {
+	if err := ChatSend(ctx, id, ChatMessage{Text: "在吗"}, guest.o); err != nil {
 		t.Fatal(err)
 	}
 	if ev, _ := host.recv(ctx, id, 0); types(ev) != "opened,joined,message" {
@@ -321,7 +321,7 @@ func TestChatCheckpointAndNewGoal(t *testing.T) {
 	if types(ev) != "checkpoint" || ev[0].By != "peer" || ev[0].Text != "字段已对齐：id, name" || !ev[0].Untrusted {
 		t.Fatalf("guest sees checkpoint: %+v", ev)
 	}
-	if err := ChatSend(ctx, id, "继续", guest.o); err == nil || !strings.Contains(err.Error(), "paused") {
+	if err := ChatSend(ctx, id, ChatMessage{Text: "继续"}, guest.o); err == nil || !strings.Contains(err.Error(), "paused") {
 		t.Fatalf("message while paused: %v", err)
 	}
 	if err := ChatAccept(ctx, id, host.o); err == nil {
@@ -349,7 +349,7 @@ func TestChatCheckpointAndNewGoal(t *testing.T) {
 
 	// The new budget runs out: the relay pauses without asking the agents.
 	for _, text := range []string{"一", "二"} {
-		if err := ChatSend(ctx, id, text, host.o); err != nil {
+		if err := ChatSend(ctx, id, ChatMessage{Text: text}, host.o); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -360,7 +360,128 @@ func TestChatCheckpointAndNewGoal(t *testing.T) {
 	if ev, _ := host.recv(ctx, id, 0); types(ev) != "checkpoint" || ev[0].By != "relay" {
 		t.Fatalf("host sees budget checkpoint: %+v", ev)
 	}
-	if err := ChatSend(ctx, id, "三", host.o); err == nil || !strings.Contains(err.Error(), "paused") {
+	if err := ChatSend(ctx, id, ChatMessage{Text: "三"}, host.o); err == nil || !strings.Contains(err.Error(), "paused") {
 		t.Fatalf("message over budget: %v", err)
+	}
+}
+
+func activePair(t *testing.T) (context.Context, *side, *side, string) {
+	t.Helper()
+	_, srv := server(t, relay.DefaultConfig())
+	ctx := context.Background()
+	host, guest := newSide(t, srv.URL), newSide(t, srv.URL)
+	id, rawCode := invite(t, ctx, host, guest)
+	if _, err := ChatJoin(ctx, rawCode, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	host.recv(ctx, id, 0)
+	return ctx, host, guest, id
+}
+
+func TestChatMessageKindsAndReplies(t *testing.T) {
+	ctx, host, guest, id := activePair(t)
+	host.events = nil
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "request", Text: "字段定义？"}, host.o); err != nil {
+		t.Fatal(err)
+	}
+	if sent := host.events[0]; sent.ID != "h1" || sent.Kind != "request" {
+		t.Fatalf("sent: %+v", sent)
+	}
+	ev, _ := guest.recv(ctx, id, time.Second)
+	if ev[0].ID != "h1" || ev[0].Kind != "request" || ev[0].Text != "字段定义？" {
+		t.Fatalf("request: %+v", ev)
+	}
+	for _, bad := range []ChatMessage{
+		{Kind: "reply", Text: "x"},                // reply needs a target
+		{Kind: "reply", ReplyTo: "g1", Text: "x"}, // must name the peer's message
+		{Kind: "reply", ReplyTo: "h01", Text: "x"},
+		{Kind: "shout", Text: "x"},
+	} {
+		if err := ChatSend(ctx, id, bad, guest.o); err == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "reply", ReplyTo: "h1", Text: "{id:int}"}, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	ev, _ = host.recv(ctx, id, time.Second)
+	// Rejected sends fail validation before sealing, so they use no counter.
+	if ev[0].Kind != "reply" || ev[0].ReplyTo != "h1" || ev[0].ID != "g1" {
+		t.Fatalf("reply: %+v", ev)
+	}
+}
+
+func TestChatWakeHoldsProgress(t *testing.T) {
+	ctx, host, guest, id := activePair(t)
+	for _, m := range []ChatMessage{{Kind: "progress", Text: "一"}, {Kind: "note", Text: "二"}} {
+		if err := ChatSend(ctx, id, m, guest.o); err != nil {
+			t.Fatal(err)
+		}
+	}
+	quiet := guest.o
+	quiet.Emit = nil
+	sent := make(chan error, 1)
+	go func() {
+		time.Sleep(1500 * time.Millisecond)
+		sent <- ChatSend(ctx, id, ChatMessage{Kind: "request", Text: "三"}, quiet)
+	}()
+	host.events = nil
+	start := time.Now()
+	if err := ChatRecv(ctx, id, 20*time.Second, []string{"request", "reply", "delivery"}, host.o); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-sent; err != nil {
+		t.Fatal(err)
+	}
+	// Progress did not end the wait; the request did, and all three arrive in order.
+	if took := time.Since(start); took < time.Second || types(host.events) != "message,message,message" ||
+		host.events[0].Text != "一" || host.events[2].Kind != "request" {
+		t.Fatalf("after %v: %+v", took, host.events)
+	}
+	// Held progress is released when a wait runs out, too.
+	ChatSend(ctx, id, ChatMessage{Kind: "progress", Text: "四"}, guest.o)
+	host.events = nil
+	if err := ChatRecv(ctx, id, 1500*time.Millisecond, []string{"request"}, host.o); err != nil || types(host.events) != "message" || host.events[0].Text != "四" {
+		t.Fatalf("timeout release: %+v %v", host.events, err)
+	}
+}
+
+func TestChatDoneBothSides(t *testing.T) {
+	ctx, host, guest, id := activePair(t)
+	if err := ChatDone(ctx, id, "后端完成", guest.o); err != nil {
+		t.Fatal(err)
+	}
+	if err := ChatDone(ctx, id, "", guest.o); err == nil {
+		t.Fatal("reported done twice")
+	}
+	ev, _ := host.recv(ctx, id, time.Second)
+	if types(ev) != "done" || ev[0].By != "peer" || ev[0].Text != "后端完成" {
+		t.Fatalf("host sees peer done: %+v", ev)
+	}
+	// One side done is not a pause: work and requests continue.
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "request", Text: "再加个字段"}, host.o); err != nil {
+		t.Fatal(err)
+	}
+	if err := ChatDone(ctx, id, "前端完成", host.o); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []*side{host, guest} {
+		ev, _ := s.recv(ctx, id, time.Second)
+		last := ev[len(ev)-1]
+		if last.Event != "checkpoint" || last.By != "relay" || last.Reason != "all_done" {
+			t.Fatalf("all done: %+v", ev)
+		}
+	}
+	if err := ChatPropose(ctx, id, "修 bug", 5, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	host.recv(ctx, id, time.Second)
+	if err := ChatAccept(ctx, id, host.o); err != nil {
+		t.Fatal(err)
+	}
+	host.recv(ctx, id, time.Second)
+	// A new goal starts with nobody done.
+	if err := ChatDone(ctx, id, "", host.o); err != nil {
+		t.Fatalf("done after resume: %v", err)
 	}
 }

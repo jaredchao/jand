@@ -67,6 +67,11 @@ type Event struct {
 	// from the other side when received: agree to them only with the user.
 	Goal   string `json:"goal,omitempty"`
 	Budget int    `json:"budget,omitempty"`
+	// Message fields: ID names a message (h3 is the host's third payload),
+	// Kind is its declared purpose, ReplyTo the message it answers.
+	ID      string `json:"id,omitempty"`
+	Kind    string `json:"kind,omitempty"`
+	ReplyTo string `json:"reply_to,omitempty"`
 }
 
 type Options struct {
