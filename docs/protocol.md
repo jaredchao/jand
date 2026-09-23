@@ -2,7 +2,7 @@
 
 > 历史 0.1 方案，保留当时的 Handoff 名称；当前产品名为 jand，当前协议见 [HTTP 设计](HTTP_DESIGN.md)。
 
-**此文件仅记录旧 0.1 原型，不适用于当前 0.2 构建。当前协议见 [HTTP_DESIGN.md](HTTP_DESIGN.md)。**
+**此文件仅记录旧 0.1 原型，不适用于 0.2 及以后的任何版本。当前协议见 [HTTP_DESIGN.md](HTTP_DESIGN.md)。**
 
 状态：开发原型；双方须运行同一协议版本。原始产品说明保存在 `product-original.md`，本文件记录评审后实际实施的约定。
 

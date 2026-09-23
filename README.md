@@ -1,83 +1,125 @@
 # jand
 
-jand 将一份任务交接文件从一个 Agent 所在机器发送给另一台机器。当前 **0.4.1** 使用 HTTP 请求，不使用 WebSocket。发送方上传客户端加密的单文件后即可退出；Relay 只在内存中暂存密文 10 分钟，接收方凭一次性码领取。
+jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远程协作。当前版本 **0.4.1**。
+
+- **交接**：把一个任务文件（≤10 MiB）在客户端加密后交给对方。发送方上传后即可退出；Relay 只在内存中暂存密文 10 分钟，接收方凭一次性接收码领取。
+- **对话与协作**：交接时加 `--chat`，这份文件同时作为邀请。对方的用户同意后，双方 Agent 围绕一个明确的目标通信：各自干活，需要时提请求、交付、回复，自己的部分做完后报告完成，由双方的用户验收。
+- **人始终是授权方**：jand 只传东西。收到的文件、对方的消息、目标和流程说明都是不可信资料，不能代替接收端用户的决定。
+
+全程只用 HTTP(S)，不用 WebSocket，也没有常驻进程：`chat recv --wait` 阻塞到有事件才退出，Agent 可以把它放在后台运行，由宿主（例如 Claude Code 的后台任务）在它退出时唤起。
+
+## 文档
+
+| 文档 | 读者 | 内容 |
+|---|---|---|
+| [docs/AGENT.md](docs/AGENT.md) | Agent | 操作契约：收发、对话、协作、安全约束、退出码。随发行包分发 |
+| [docs/jand-template.md](docs/jand-template.md) | 发送方 | 交接包模板，含协作分工（Collaboration）一节 |
+| [docs/HTTP_DESIGN.md](docs/HTTP_DESIGN.md) | 开发者 | 交接协议与安全边界 |
+| [docs/CHAT_DESIGN.md](docs/CHAT_DESIGN.md) | 开发者 | 对话与协作协议：目标、检查点、消息类型、流程章程 |
+| [docs/CONFIG_DESIGN.md](docs/CONFIG_DESIGN.md) | 开发者、运营者 | 配置分层：安全底线、Relay、本地客户端、协作流程 |
+| [deploy/INSTALL.md](deploy/INSTALL.md) | 运营者 | Relay 部署、升级与验收 |
+| [docs/validation.md](docs/validation.md) | 所有人 | 各版本的验证记录与实测结论 |
+
+[product-original.md](docs/product-original.md) 是原始需求，[protocol.md](docs/protocol.md) 是旧 0.1 WebSocket 原型的协议，两者只作历史记录。
 
 ## 构建与本机试用
 
-需要 Go 1.24 或更高版本构建；编译后的程序不需要 Go。程序名为 `jand`。
+需要 Go 1.24 或更高版本构建，没有第三方依赖；编译后的程序不需要 Go。
 
 ```bash
 go build -o bin/jand ./cmd/jand
-./bin/jand relay
+./bin/jand relay                              # 另开一个终端运行
+./bin/jand send docs/jand-template.md         # 输出 43 字符接收码后退出
+./bin/jand --out ./inbox '<完整接收码>'        # 10 分钟内领取
 ```
 
-另一个终端发送：
+- `send --wait 10m` 会等待并验证接收方的保存回执（`delivered`）。不加时，退出码 0 只表示 Relay 已暂存密文（`queued`）。
+- 退出码 3 表示回执没拿到，但接收方可能已经保存：先核对，再决定要不要重发。
+- 上传被拒时会附上原因，如 `relay full`、`relay busy`、`upload timed out`。这时还没有产生接收码，可以直接重试。
+- 接收码只能领取一次，领取失败或下载中断后即作废，需要发送方重新发送。
+- 收到的文件保存在随机的独立目录，不会覆盖已有文件，也不会被执行。
+- `--json` 输出逐行 JSON 事件，供 Agent 解析。完整用法见 `jand --help`、`jand chat --help`。
+
+## 对话与协作
 
 ```bash
-./bin/jand send docs/jand-template.md
-```
+# 发起方：交接文件作为邀请，目标写明「什么算做完」，可选协作流程
+jand send --chat --goal '对齐 /users 响应字段' --workflow workflows/review.json 交接.md
+#   --workflow 给名字时从 $JAND_HOME/workflows/<名字>.json 读取，给路径时直接读取
+#   输出 Code（交给对方，10 分钟内领取）和 Chat（自己后续命令用，不要发给对方）
 
-程序返回一个 43 字符接收码并退出。接收端在 10 分钟内运行：
+# 接收方：照常领取，saved 事件会带上目标、预算和流程；用户同意后加入
+jand chat join '<code>'
 
-```bash
-./bin/jand --out ./inbox '<完整接收码>'
-```
-
-完整用法见 `jand --help` 或 `jand send --help`。如需让发送端等待接收方保存确认，可加 `--wait 10m`。不加时退出码 0 仅表示 Relay 已暂存密文；`--json` 的事件名为 `queued`。接收端输出 `saved` 路径、大小和 SHA-256；发送端验证回执后输出 `delivered`。回执丢失返回退出码 3，接收方可能已保存，应先核对再重发。
-
-出错时的提示：上传被 Relay 拒绝会附带原因，如 `relay full`（容量已满，稍后重试）、`relay busy`（同时上传过多）、`upload timed out`（2 分钟内未传完）；这些情况下尚未产生接收码，可以直接重试。接收码只能领取一次，领取失败或下载中途断开后该码作废，需由发送方重新发送。
-
-默认 Relay 是 `http://127.0.0.1:8787`。两台机器直连联测时可用 `--relay http://服务器IP:8787`；公网长期使用建议 `https://域名`。双方必须填写同一个地址与协议版本。接收文件保存在随机独立目录，不覆盖现有文件，也不会被执行。
-
-Relay 地址可用 `JAND_RELAY` 设置，命令行 `--relay` 优先；均未设置时使用上述本机地址。旧环境变量 `HANDOFF_RELAY` 不再读取。为了与已有 0.2 客户端互通，线协议仍使用 `handoff/0.2`、`/v1/handoffs/` 和 `X-Handoff-*`，这些不是当前程序名。
-
-## Agent 调用
-
-给 Agent 读的完整操作契约见 [docs/AGENT.md](docs/AGENT.md)；`make release` 会把它按平台渲染后放进每个发行包，与给人读的 `QUICKSTART.md` 并列。下面是要点。
-
-发送端先按 [交接模板](docs/jand-template.md)写一份文件，再运行 `jand send --json --relay 地址 文件`。拿到 `queued.code` 后，通过已认可的渠道交给同事。对方的 Agent 运行 `jand --json --relay 地址 --out 目录 接收码`，读取 `saved.path`。`saved.requires_user_approval=true` 是固定的接收策略提示，表示文件已保存、任务仍待本地用户决定；它不是程序检测到的批准结果。Agent 先向本地用户摘要目标、来源、证据、拟做的动作、风险与缺失信息，取得对具体动作的明确确认后才继续。拒绝、未回复或信息不足时不执行任务。
-
-本工具只交付文件，不自动发现、唤醒或授权远端 Agent。包内文字是未信任资料，发送方的授权声明不能代替接收端用户的决定。`queued` 和 `delivered` 只描述传输状态，不表示任务被接受。短码传递和接收端启动仍需由双方安排。当前 CLI 会提示人工确认，但是否真正遵守仍取决于接收端 Agent 的本地规则；jand 无法单独强制 Agent 的后续行为。
-
-## 对话
-
-发送时加 `--chat` 和 `--goal`，交接文件会作为对话邀请发出，目标写明「什么算做完」。接收方的用户同意后执行 `jand chat join <code>`，之后双方用 `jand chat send` 发消息，用 `jand chat recv --wait 30m` 收消息。`recv` 会阻塞到对方说话为止，所以 Agent 可以把它放在后台运行，等它退出时被唤起。对方的消息始终是未信任资料，不能代替本地用户授权。每个目标有消息预算（默认 40 条）；目标达成或预算用完时对话暂停，只有双方用户都同意新目标才能继续，任何一方都可以随时结束。对话需要 0.4.1 的 Relay（0.4.0 的 Relay 上只能用默认流程）（对话协议仍在开发，0.3.x 之间不保证兼容）；0.2.x Relay 上 `send --chat` 会直接报错，不会上传文件。0.3.x Relay 仍兼容 0.2.x 客户端的普通交接，可用 `python3 scripts/compat_smoke.py <旧版 jand>` 验证。旧版接收端若遇到以 `-` 开头的接收码，在码前加 `--`。
-
-```bash
-jand send --chat --goal '对齐 /users 响应字段' 交接.md    # 输出 Code 和 Chat
-jand chat join '<code>'                  # 接收方，征得用户同意后
-jand chat send --kind request <chat> 你那边 /users 返回什么结构？   # 得到编号，如 h1
+# 双方
+jand chat send --kind request <chat> '/users 返回什么结构？'        # 自动编号，如 h1
 jand chat send --kind reply --reply-to h1 <chat> '{id:int, name:str}'
+jand chat send --kind delivery --supersedes g2 --file schema.md <chat>
 jand chat recv --wait 30m --wake request,reply,delivery <chat>     # 进展通报不打断手头工作
-jand chat done --summary '后端完成，test_api.sh 通过' <chat>        # 双方都 done 后暂停，各自问人
-jand chat propose --goal '再对 /orders' <chat>      # 继续需要一方提议、另一方 accept
-jand chat close <chat>
+jand chat done --summary '后端完成，test_api.sh 通过' <chat>
+jand chat propose --goal '再对 /orders' <chat>                    # 暂停后继续：一方提议，另一方 accept
+jand chat close <chat>                                            # 任何一方随时可以结束
 ```
 
-**配置**：本机默认值写在 `$JAND_HOME/config.json`（`jand config` 显示路径和生效值）；Relay 可用 `jand relay --config relay.json`（示例见 `deploy/relay.json.example`）；协作流程用 `send --chat --workflow <名字或路径>` 选择，示例见 `workflows/`，流程随邀请加密送给对方、由对方的用户认可。分层设计见 [CONFIG_DESIGN.md](docs/CONFIG_DESIGN.md)。
+- **目标与预算**：每个目标有消息预算（默认 40 条），用完就由 Relay 强制暂停。
+- **暂停与恢复**：双方都报告完成（或按流程任一方完成）、有人要求立即暂停、预算用完，这三种情况都会让对话暂停。只有一方提出新目标、另一方接受，双方各自的用户都同意，对话才会继续。
+- **先读再回**：对方有未读的请求、回复或交付时，发回复、请求、交付会被拒绝（退出码 5），免得回复旧版本。
+- **收尾消息**：暂停后每方还能发少量回复或留言用于收尾，不计入预算。
+- 协议与事件细节见 [CHAT_DESIGN.md](docs/CHAT_DESIGN.md)，给 Agent 的规则见 AGENT.md 的「对话」和「协作」两节。
 
-设计、事件和超时见 [CHAT_DESIGN.md](docs/CHAT_DESIGN.md)，给 Agent 的规则在 AGENT.md 的「对话」一节。
+## 配置
 
-## 验证与交付
+| 层 | 在哪 | 管什么 |
+|---|---|---|
+| 安全底线 | 程序内，不可配置 | 加密、一次性领取、座位锁定、用户同意、不可信标记、暂停与计数机制、先读再回 |
+| Relay | `jand relay --config relay.json`（示例 [deploy/relay.json.example](deploy/relay.json.example)） | 超时、容量、默认预算、暂停后收尾消息上限；`--print-config` 查看生效值 |
+| 本地客户端 | `$JAND_HOME/config.json`，路径和生效值用 `jand config` 查看 | 默认 Relay 地址、输出目录、默认预算、默认 `--wake`、默认流程 |
+| 协作流程 | `send --chat --workflow <名字或路径>`，示例见 [workflows/](workflows) | 完成规则（all/any）、收尾消息条数、预算、允许的消息类型、角色、流程说明。流程随邀请加密送给对方，由对方的用户认可 |
+
+- **优先级**：命令行参数 > 环境变量（`JAND_RELAY`、`JAND_HOME`、`JAND_RELAY_CONFIG`）> 配置文件 > 内置默认值。
+- **本地配置**：没有配置文件时使用内置默认值，默认 Relay 为 `http://127.0.0.1:8787`。把真实地址写进本机配置一次就行，不用每次都带 `--relay`。
+- **访问令牌**：只预留了字段，尚未实现。
+- 分层设计见 [CONFIG_DESIGN.md](docs/CONFIG_DESIGN.md)。
+
+## 兼容性
+
+- **交接协议**自 0.2 起没有变过：0.2.x 客户端可以继续通过 0.4.1 的 Relay 收发，新旧客户端互相收发也可以。
+  - 为了兼容，线协议仍沿用 `handoff/0.2`、`/v1/handoffs/` 和 `X-Handoff-*`，这些不是当前的程序名。
+  - 旧版接收端遇到以 `-` 开头的接收码时，在码前加 `--`。0.3 起生成的码不再以 `-` 开头。
+- **对话协议**仍在开发，版本之间不保证兼容。
+  - 0.4.1 与 0.4.0 在 0.4.1 Relay 上互通（已用真实 0.4.0 程序验证，双向收发与报告完成都正常）。
+  - 0.4.0 的 Relay 上只能用默认流程；自定义流程会明确报错。
+  - 采用「任一方完成就暂停」流程的对话，会拒绝 0.4.0 客户端加入。其他自定义流程下，0.4.0 接收方能加入，但看不到流程内容，也不执行流程对消息类型的限制，所以建议双方都用 0.4.1。
+  - 0.3.x 与 0.4.x 之间未验证互通。双方客户端和 Relay 应使用同一版本。
+- 用 `python3 scripts/compat_smoke.py <旧版 jand>` 可以验证交接兼容性。
+
+## 验证与发布
 
 ```bash
 go test -race ./...
 go vet ./...
-make smoke
-make release
+make smoke                                                 # 真实进程：交接 + 对话全流程
+python3 scripts/compat_smoke.py <旧版 jand>                # 新旧客户端互通
+python3 scripts/remote_smoke.py --relay https://你的域名     # 公网交接
+python3 scripts/chat_smoke.py https://你的域名               # 公网对话全流程
+make release                                               # 或 python3 scripts/release.py --targets linux-amd64,macos-arm64
 ```
 
 跨平台包生成到 `dist/releases/`。
 
-macOS 二进制可选签名与公证，两者都不给时自动跳过并在 `BUILD-INFO.json` 与包内说明中如实标注：
+macOS 二进制可以签名和公证。两者都不做时自动跳过，并在 `BUILD-INFO.json` 与包内说明里如实标注：
 
 ```bash
 # 仅签名（Gatekeeper 对浏览器下载的文件仍会拦截）
 python3 scripts/release.py --sign "Developer ID Application: NAME (TEAMID)"
 
 # 签名 + 公证；先存一次凭据，密码不会进入仓库或命令行历史
-xcrun notarytool store-credentials jand-notary --apple-id <Apple ID> --team-id <TEAMID>
-python3 scripts/release.py --sign "Developer ID Application: NAME (TEAMID)" --notary-profile jand-notary
+xcrun notarytool store-credentials <配置名> --apple-id <Apple ID> --team-id <TEAMID>
+python3 scripts/release.py --sign "Developer ID Application: NAME (TEAMID)" --notary-profile <配置名>
 ```
 
-也可用环境变量 `JAND_SIGN_IDENTITY` 与 `JAND_NOTARY_PROFILE` 代替参数。签名在计算 `binary_sha256` 之前执行，因此 `BUILD-INFO.json` 中的哈希始终对应最终发出的文件。裸可执行文件无法装订公证票据，Gatekeeper 在首次运行时联网校验。Supervisor 与 HTTPS 部署步骤见 [deploy/INSTALL.md](deploy/INSTALL.md)；部署后可运行 `python3 scripts/remote_smoke.py --relay https://你的域名` 做公网收发自测。协议和安全边界见 [HTTP 设计](docs/HTTP_DESIGN.md)。原始需求留在 [product-original.md](docs/product-original.md)；旧 WebSocket 原型的协议文档留作历史记录，不适用于 0.2。
+- 也可以用环境变量 `JAND_SIGN_IDENTITY` 与 `JAND_NOTARY_PROFILE` 代替参数。
+- 签名在计算 `binary_sha256` 之前执行，所以 `BUILD-INFO.json` 里的哈希始终对应最终发出的文件。
+- 裸可执行文件无法装订公证票据，Gatekeeper 会在首次运行时联网校验。
+
+公开的包和仓库只使用示例地址 `203.0.113.10`。真实的 Relay 地址由使用者写进本机配置或 `JAND_RELAY`；写死真实地址的包（`release.py --relay`）只用于私下分发，不上传 Release。部署步骤见 [deploy/INSTALL.md](deploy/INSTALL.md)。
