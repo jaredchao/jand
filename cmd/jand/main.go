@@ -34,7 +34,8 @@ func usage(w io.Writer) {
 
   jand send [options] <file>
   jand [options] <code>
-  jand chat <join|decline|send|recv|close> ...   (see jand chat --help)
+  jand chat <join|decline|send|recv|done|checkpoint|propose|accept|close> ...
+                   (see jand chat --help)
   jand relay [--listen 127.0.0.1:8787]
 
 Options (before file/code):
@@ -42,7 +43,7 @@ Options (before file/code):
   --json           Newline-delimited JSON events (code is emitted immediately)
   --out DIR        Receive directory (default: ./received)
   --wait DURATION  Optional wait for verified receiver receipt (default: 0)
-  --chat           Send: also invite the receiver to a chat (needs a 0.3+ relay)
+  --chat           Send: also invite the receiver to a chat (needs a 0.3.2 relay)
   --goal TEXT      With --chat, required: what counts as done
   --budget N       With --chat: messages allowed for the goal (default 40, max 200)
 
@@ -150,10 +151,15 @@ func emitter(jsonOutput bool, out, stderr io.Writer) func(transfer.Event) {
 		}
 		switch e.Event {
 		case "queued":
-			fmt.Fprintf(out, "Code: %s\nEncrypted transfer queued in relay RAM (expires in 10 minutes).\n", e.Code)
-			if e.Chat != "" {
-				fmt.Fprintf(out, "Chat: %s\nWait for the receiver: jand chat recv --wait 30m %s\n", e.Chat, e.Chat[:8])
+			if e.Chat == "" {
+				fmt.Fprintf(out, "Code: %s\nEncrypted transfer queued in relay RAM (expires in 10 minutes).\n", e.Code)
+				return
 			}
+			// Both ids are printed; say plainly which one goes to the peer. The
+			// chat id has been sent by mistake more than once.
+			fmt.Fprintf(out, "Code: %s\n  -> Give this receive code to the other side. It must be claimed within 10 minutes.\n", e.Code)
+			fmt.Fprintf(out, "Chat: %s\n  -> Your own chat id for later commands. Do not send it to the other side; it cannot be used to join.\n", e.Chat)
+			fmt.Fprintf(out, "Wait for the receiver: jand chat recv --wait 30m %s\n", e.Chat[:8])
 		case "saved":
 			fmt.Fprintf(out, "Verified.\nSaved: %s\nSHA-256: %s\nTask pending local user approval; review the packet before acting.\n", e.Path, e.SHA256)
 			if e.ChatInvite {

@@ -5,6 +5,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/jaredchao/jand/internal/transfer"
 )
 
 func TestSendHelpShowsCommandUsage(t *testing.T) {
@@ -35,5 +37,15 @@ func TestDashLeadingCodeIsNotAFlag(t *testing.T) {
 	// An unknown flag that is not a code stays a usage error.
 	if got := protectCodes([]string{"--bogus"}); len(got) != 1 {
 		t.Fatalf("%q", got)
+	}
+}
+
+func TestChatQueuedSaysWhichIdGoesToPeer(t *testing.T) {
+	var out, stderr bytes.Buffer
+	emitter(false, &out, &stderr)(transfer.Event{Event: "queued", Code: "C0DE", Chat: "3323ff55ae57c7ea419a68f2e8de5f9c"})
+	text := out.String()
+	if !strings.Contains(text, "Code: C0DE\n  -> Give this receive code to the other side") ||
+		!strings.Contains(text, "Do not send it to the other side") {
+		t.Fatalf("%q", text)
 	}
 }
