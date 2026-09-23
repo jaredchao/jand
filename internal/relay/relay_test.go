@@ -3,6 +3,7 @@ package relay
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -114,5 +115,29 @@ func TestSlowUploadReleasesSlot(t *testing.T) {
 	}
 	if got := put(t, srv.Client(), srv.URL, other, bytes.Repeat([]byte("x"), 32)); got != http.StatusCreated {
 		t.Fatalf("slot not released: %d", got)
+	}
+}
+
+func TestHealthzReportsVersionNotSessions(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Version = "9.9.9"
+	r := New(cfg)
+	defer r.Close()
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	resp, err := srv.Client().Get(srv.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body map[string]any
+	if json.NewDecoder(resp.Body).Decode(&body) != nil || body["status"] != "ok" || body["version"] != "9.9.9" ||
+		body["handoff"] != "handoff/0.2" || body["chat_features"] == nil {
+		t.Fatalf("%v", body)
+	}
+	for _, leak := range []string{"active", "sessions", "chats", "stored"} {
+		if _, ok := body[leak]; ok {
+			t.Fatalf("healthz reveals %s", leak)
+		}
 	}
 }

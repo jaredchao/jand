@@ -917,9 +917,11 @@ type relayEvent struct {
 }
 
 // wakes reports whether an event should end a recv that was told to wake
-// only for some message kinds. Every non-message event wakes.
+// only for some message kinds. Every non-message event wakes, and so does a
+// note: it is what a sender gets by not choosing a kind, so it may well be
+// a request left unlabelled. Only kinds chosen on purpose can be held back.
 func wakes(e Event, kinds []string) bool {
-	if len(kinds) == 0 || e.Event != "message" {
+	if len(kinds) == 0 || e.Event != "message" || e.Kind == "note" {
 		return true
 	}
 	for _, k := range kinds {

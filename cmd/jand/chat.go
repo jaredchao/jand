@@ -40,8 +40,9 @@ names the peer message being answered; --supersedes marks a delivery as
 replacing an earlier one of yours. A reply, request or delivery is refused
 while the peer has messages you have not read (exit 5): run recv first, or
 add --anyway. recv --wake request,reply,delivery
-lets progress and notes accumulate instead of waking you; they are shown with
-the next event that does wake. Non-message events always wake.
+lets progress accumulate instead of waking you; held messages are shown with
+the next event that does wake. Non-message events and notes (the default kind,
+possibly an unlabelled request) always wake.
 
 A chat pauses at a checkpoint when both sides report done, either side calls
 checkpoint, or the goal's message budget runs out. While paused, each side may

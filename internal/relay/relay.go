@@ -5,8 +5,8 @@ package relay
 import (
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -47,7 +47,16 @@ type Config struct {
 	// ChatPauseNotes is how many closing messages each side may send while
 	// the chat is paused, outside the budget, to tie up loose ends.
 	ChatPauseNotes int
+
+	// Version is the program version reported by /healthz; empty omits it.
+	Version string
 }
+
+// ChatFeatures lists what this relay's chat protocol supports, reported by
+// /healthz. The chat encryption label has stayed jand-chat/1 through
+// incompatible releases, so a protocol number would suggest compatibility
+// that does not exist; named features say what a client can rely on.
+var ChatFeatures = []string{"goal", "budget", "kinds", "done", "checkpoint", "closing_notes", "charter", "done_rule_any"}
 
 func DefaultConfig() Config {
 	return Config{MaxSessions: 128, MaxStoredBytes: 64 * 1024 * 1024, TTL: 10 * time.Minute, UploadTimeout: 2 * time.Minute,
@@ -178,11 +187,18 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if req.URL.Path == "/healthz" && req.Method == http.MethodGet {
 		// Body added so an operator can tell a live process from a stale proxy
-		// cache or a listener that accepts but no longer serves. Session counts
-		// are deliberately omitted: this endpoint is unauthenticated.
+		// cache or a listener that accepts but no longer serves, and which
+		// release answers. Session counts are deliberately omitted: this
+		// endpoint is unauthenticated.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"ok","uptime_seconds":%d}`+"\n", int64(time.Since(r.started).Seconds()))
+		json.NewEncoder(w).Encode(struct {
+			Status        string   `json:"status"`
+			UptimeSeconds int64    `json:"uptime_seconds"`
+			Version       string   `json:"version,omitempty"`
+			Handoff       string   `json:"handoff"`
+			ChatFeatures  []string `json:"chat_features"`
+		}{"ok", int64(time.Since(r.started).Seconds()), r.config.Version, "handoff/0.2", ChatFeatures})
 		return
 	}
 	if chat, ok := strings.CutPrefix(req.URL.Path, "/v1/chats/"); ok {

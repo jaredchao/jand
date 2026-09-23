@@ -417,7 +417,7 @@ func TestChatMessageKindsAndReplies(t *testing.T) {
 
 func TestChatWakeHoldsProgress(t *testing.T) {
 	ctx, host, guest, id := activePair(t)
-	for _, m := range []ChatMessage{{Kind: "progress", Text: "一"}, {Kind: "note", Text: "二"}} {
+	for _, m := range []ChatMessage{{Kind: "progress", Text: "一"}, {Kind: "progress", Text: "二"}} {
 		if err := ChatSend(ctx, id, m, guest.o); err != nil {
 			t.Fatal(err)
 		}
@@ -722,6 +722,48 @@ func TestRepositoryWorkflowsAreValid(t *testing.T) {
 		w, err := LoadWorkflow("../../workflows/" + name + ".json")
 		if err != nil || w.Name != name {
 			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestChatWakeNeverHoldsNotes(t *testing.T) {
+	ctx, host, guest, id := activePair(t)
+	// An unlabelled message defaults to note and may be a request in disguise.
+	if err := ChatSend(ctx, id, ChatMessage{Text: "接口字段是什么？"}, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	host.events = nil
+	start := time.Now()
+	if err := ChatRecv(ctx, id, 10*time.Second, []string{"request"}, host.o); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 3*time.Second || types(host.events) != "message" || host.events[0].Kind != "note" {
+		t.Fatalf("note held back: %+v", host.events)
+	}
+}
+
+func TestSendWarnsAboutUnfilledTemplate(t *testing.T) {
+	_, srv := server(t, relay.DefaultConfig())
+	template, err := os.ReadFile("../../docs/jand-template.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		content []byte
+		warn    bool
+	}{
+		"blank template": {template, true},
+		"filled":         {[]byte("# 交接\n- 目标：对齐接口\n- 来源：仓库 main\n- 状态：进行中\n- 风险：无\n- 下一步：联调\n"), false},
+		"prose":          {[]byte("# 交接\n\n请对齐 /users 接口。\n"), false},
+	} {
+		var events []Event
+		o := Options{RelayURL: srv.URL, Emit: func(e Event) { events = append(events, e) }}
+		if err := Send(context.Background(), fixture(t, tc.content), o); err != nil {
+			t.Fatal(err)
+		}
+		warned := events[0].Event == "warning"
+		if warned != tc.warn || events[len(events)-1].Event != "queued" {
+			t.Errorf("%s: %+v", name, events)
 		}
 	}
 }

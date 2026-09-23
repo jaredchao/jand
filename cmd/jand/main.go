@@ -207,6 +207,8 @@ func emitter(jsonOutput bool, out, stderr io.Writer) func(transfer.Event) {
 			fmt.Fprintf(out, "Receiver confirmed the file is saved.\nSHA-256: %s\n", e.SHA256)
 		case "error":
 			fmt.Fprintln(stderr, e.Message)
+		case "warning":
+			fmt.Fprintln(stderr, "Warning: "+e.Message)
 		default:
 			printChatEvent(out, e)
 		}
@@ -255,6 +257,7 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) int {
 		return 0
 	}
 	config.Logger = slog.New(slog.NewTextHandler(out, nil))
+	config.Version = version
 	r := relay.New(config)
 	defer r.Close()
 	listener, err := net.Listen("tcp", *addr)

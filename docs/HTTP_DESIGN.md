@@ -36,7 +36,7 @@
 | GET | `/v1/handoffs/{room}` | 凭领取令牌一次性取走密文 |
 | POST | `/v1/handoffs/{room}/receipt` | 接收端保存后提交回执 |
 | GET | `/v1/handoffs/{room}/receipt` | 发送端查询回执，204 表示未确认 |
-| GET | `/healthz` | 返回 `{"status":"ok","uptime_seconds":N}`，仅证明进程响应；不含会话数与版本 |
+| GET | `/healthz` | 返回 `status`、`uptime_seconds`、`version`（程序版本）、`handoff`（交接协议，固定为 `handoff/0.2`）与 `chat_features`（Relay 支持的对话功能）。不含会话数、容量等信息，因为这个接口不需要认证 |
 
 上传被拒时，响应体是一行简短原因，发送端会原样附在错误信息后（过滤控制字符，最长 120 字符），例如 `relay rejected transfer: HTTP 503: relay full`：
 

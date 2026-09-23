@@ -288,6 +288,11 @@ func Send(ctx context.Context, filename string, opts Options) error {
 	if len(data) > maxFile {
 		return errors.New("file exceeds 10 MiB")
 	}
+	if looksUnfilled(data) {
+		// Sending the blank template happened in practice. It is not an
+		// error, since the sender may mean it, but it should not go unnoticed.
+		o.Emit(Event{Event: "warning", Message: "the file looks like an unfilled template (many empty \"- field:\" lines); check it is the handoff you meant to send"})
+	}
 	c, err := code.New()
 	if err != nil {
 		return err
@@ -450,6 +455,27 @@ func Receive(ctx context.Context, rawCode string, opts Options) (string, error) 
 		return s.path, fmt.Errorf("file saved but receipt failed: %w", ErrUnconfirmed)
 	}
 	return s.path, nil
+}
+
+// looksUnfilled reports a Markdown list of mostly empty "- field:" lines, the
+// shape of jand-template.md before anyone writes in it.
+func looksUnfilled(data []byte) bool {
+	fields, empty := 0, 0
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "- ") {
+			continue
+		}
+		i := strings.IndexAny(line, ":：")
+		if i < 0 {
+			continue
+		}
+		fields++
+		if strings.TrimSpace(strings.TrimLeft(line[i:], ":：")) == "" {
+			empty++
+		}
+	}
+	return empty >= 5 && empty*10 >= fields*6
 }
 
 // relayReason turns a relay error body into one short printable line. The

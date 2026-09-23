@@ -35,7 +35,7 @@ sudo supervisorctl status jand-relay
 curl -fsS http://127.0.0.1:8787/healthz
 ```
 
-Relay 的运行日志写入 Supervisor 配置中的 `stdout_logfile`（示例为 `/var/log/jand-relay.log`）：启动一行，其后每次上传、领取、回执与过期各一行，被拒绝的请求记 WARN 并注明原因（`busy`、`malformed tokens`、`upload timed out`、`invalid or oversized body`、`code collision`、`relay full`；`relay full` 一行附带当前与上限的会话数和字节数）。启动行会列出版本与 `max_sessions`、`max_stored`、`ttl`、`upload_timeout`，可据此确认替换后的程序已生效。日志只含会话短标识与字节数，不含接收码、令牌或文件内容。没有流量时不产生日志，此时用 `curl -s http://127.0.0.1:8787/healthz` 确认进程存活，它返回 `{"status":"ok","uptime_seconds":N}`。
+Relay 的运行日志写入 Supervisor 配置中的 `stdout_logfile`（示例为 `/var/log/jand-relay.log`）：启动一行，其后每次上传、领取、回执与过期各一行，被拒绝的请求记 WARN 并注明原因（`busy`、`malformed tokens`、`upload timed out`、`invalid or oversized body`、`code collision`、`relay full`；`relay full` 一行附带当前与上限的会话数和字节数）。启动行会列出版本与 `max_sessions`、`max_stored`、`ttl`、`upload_timeout`，可据此确认替换后的程序已生效。日志只含会话短标识与字节数，不含接收码、令牌或文件内容。没有流量时不产生日志，此时用 `curl -s http://127.0.0.1:8787/healthz` 确认进程存活，它返回 `status`、`uptime_seconds`、`version` 等字段（0.4.1 起带版本号）。
 
 **可选：配置文件（0.4.1 起）。** 需要调整超时、容量、对话预算或暂停后收尾消息上限时，把 [relay.json.example](relay.json.example) 复制为 `/etc/jand/relay.json`，按需删改（没写的字段保持默认值；拼错的字段名会让 Relay 拒绝启动，而不是被悄悄忽略），然后在 Supervisor 的 `command` 末尾加 `--config /etc/jand/relay.json`。命令行上的 `--listen`、`--max-sessions` 仍然优先于配置文件。上线前先运行 `jand relay --config /etc/jand/relay.json --print-config` 查看最终生效的值；启动日志也会记录所用的配置文件路径。不加 `--config` 时，行为与此前版本完全一致。
 
@@ -59,7 +59,7 @@ curl -fsS http://127.0.0.1:8787/healthz
 - **交接**：线协议自 0.2 起未变，已分发的客户端无需升级。
 - **对话**：协议仍在开发，Relay 升级时查看 README 的「兼容性」一节。0.4.1 的 Relay 兼容 0.4.0 客户端；0.3.x 与 0.4.x 之间未验证。升级对话协议时，提前通知使用对话的同事一起升级客户端。
 
-`/healthz` 不返回版本号。要确认公网上跑的是哪个版本，可以看 Relay 的启动日志，或用第 4 节的对话冒烟测试（它用到的功能只有新版本才有）。
+0.4.1 起，`/healthz` 返回 `version` 和 `chat_features`，直接用 `curl -fsS https://你的域名/healthz` 就能确认公网上跑的是哪个版本、支持哪些对话功能。更早的版本不返回版本号，只能看启动日志。
 
 ## 3. 域名与证书
 
@@ -73,7 +73,7 @@ Relay 保持只监听 `127.0.0.1:8787`；公网只开放 HTTPS 入口，不需�
 curl -fsS https://你的域名/healthz
 ```
 
-这只能证明 HTTPS 路径可达，不能判定具体 Relay 版本，也不能代替收发测试。
+这证明 HTTPS 路径可达，并能从 `version` 看出是哪个版本（0.4.1 起）；但仍然不能代替收发测试。
 
 ## 4. 收发验收
 
