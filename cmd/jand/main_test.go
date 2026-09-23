@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -47,5 +48,16 @@ func TestChatQueuedSaysWhichIdGoesToPeer(t *testing.T) {
 	if !strings.Contains(text, "Code: C0DE\n  -> Give this receive code to the other side") ||
 		!strings.Contains(text, "Do not send it to the other side") {
 		t.Fatalf("%q", text)
+	}
+}
+
+func TestFileMessagesKeepTheirBytes(t *testing.T) {
+	path := t.TempDir() + "/doc.md"
+	os.WriteFile(path, []byte("终稿\n"), 0600)
+	if got, _ := readText(path, nil); got != "终稿\n" {
+		t.Fatalf("file: %q", got)
+	}
+	if got, _ := readText("", strings.NewReader("stdin\n")); got != "stdin" {
+		t.Fatalf("stdin: %q", got)
 	}
 }

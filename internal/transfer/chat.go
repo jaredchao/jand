@@ -2,6 +2,7 @@ package transfer
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -59,8 +60,17 @@ var MessageKinds = []string{"note", "progress", "request", "reply", "delivery"}
 type ChatMessage struct {
 	Kind    string `json:"kind"`
 	ReplyTo string `json:"reply_to,omitempty"`
-	Text    string `json:"text"`
+	// Supersedes (deliveries only) names this side's earlier delivery that
+	// this one replaces, so replies to the old version can be caught.
+	Supersedes string `json:"supersedes,omitempty"`
+	Text       string `json:"text"`
+	// Anyway sends even when the peer has messages this side has not read.
+	Anyway bool `json:"-"`
 }
+
+// ErrUnread stops a reply, request or delivery written without having read
+// the peer's latest messages: the usual cause of crossed messages.
+var ErrUnread = errors.New("unread messages from the peer")
 
 // messageID names a party's payload by role initial and counter, e.g. g2.
 func messageID(role string, ctr uint64) string {
@@ -95,6 +105,9 @@ func parseMessage(plain, peer string) ChatMessage {
 	if m.ReplyTo != "" && !validRef(m.ReplyTo, other(peer)) {
 		m.ReplyTo = ""
 	}
+	if m.Supersedes != "" && (m.Kind != "delivery" || !validRef(m.Supersedes, peer)) {
+		m.Supersedes = ""
+	}
 	return m
 }
 
@@ -117,10 +130,14 @@ type chatCursor struct {
 	// Held are events already taken from the relay but not yet shown,
 	// because recv was told to wake only for certain message kinds.
 	Held []Event `json:"held,omitempty"`
+	// Superseded maps the peer's replaced deliveries to their replacements.
+	Superseded map[string]string `json:"superseded,omitempty"`
 }
 
 type chatCounter struct {
 	Ctr uint64 `json:"ctr"`
+	// Superseded maps this side's replaced deliveries to their replacements.
+	Superseded map[string]string `json:"superseded,omitempty"`
 }
 
 func DefaultStateDir() string {
@@ -483,7 +500,9 @@ type transcriptLine struct {
 	ID      string `json:"id,omitempty"`
 	Type    string `json:"type,omitempty"` // a message's declared kind
 	ReplyTo string `json:"reply_to,omitempty"`
-	Text    string `json:"text,omitempty"`
+	// Supersedes is the delivery this one replaces.
+	Supersedes string `json:"supersedes,omitempty"`
+	Text       string `json:"text,omitempty"`
 }
 
 func (s *chatState) record(dir, from, kind, text string) {
@@ -491,7 +510,7 @@ func (s *chatState) record(dir, from, kind, text string) {
 }
 
 func (s *chatState) recordMessage(dir, from, id string, m ChatMessage) {
-	s.writeRecord(dir, transcriptLine{From: from, Kind: "message", ID: id, Type: m.Kind, ReplyTo: m.ReplyTo, Text: m.Text})
+	s.writeRecord(dir, transcriptLine{From: from, Kind: "message", ID: id, Type: m.Kind, ReplyTo: m.ReplyTo, Supersedes: m.Supersedes, Text: m.Text})
 }
 
 func (s *chatState) writeRecord(dir string, l transcriptLine) {
@@ -525,8 +544,25 @@ func ChatSend(ctx context.Context, id string, m ChatMessage, opts Options) error
 	if m.ReplyTo != "" && !validRef(m.ReplyTo, s.peer()) {
 		return fmt.Errorf("--reply-to must be a message id from the peer, such as %s3", s.peer()[:1])
 	}
+	if m.Supersedes != "" && (m.Kind != "delivery" || !validRef(m.Supersedes, s.Role)) {
+		return fmt.Errorf("--supersedes is for deliveries and must name one of your own messages, such as %s3", s.Role[:1])
+	}
 	if err = checkText(m.Text); err != nil {
 		return err
+	}
+	if !m.Anyway && (m.Kind == "reply" || m.Kind == "request" || m.Kind == "delivery") {
+		var cur chatCursor
+		readJSONFile(s.path(o.StateDir, ".cursor"), &cur)
+		if newer, ok := cur.Superseded[m.ReplyTo]; ok {
+			return fmt.Errorf("%s was superseded by %s; reply to the current version, or add --anyway", m.ReplyTo, newer)
+		}
+		n, first, err := s.unread(ctx, cur)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return fmt.Errorf("%w: %d (first: %s); run recv and read them before this %s, or add --anyway", ErrUnread, n, first, m.Kind)
+		}
 	}
 	payload, _ := json.Marshal(m)
 	if len(payload) > MaxChatText {
@@ -540,13 +576,101 @@ func ChatSend(ctx context.Context, id string, m ChatMessage, opts Options) error
 	if err != nil {
 		return err
 	}
+	// Replies and notes may close loose ends while the chat is paused.
+	body["closing"] = m.Kind == "reply" || m.Kind == "note"
 	if err = s.post(ctx, "messages", body, http.StatusCreated); err != nil {
 		return err
 	}
 	msgID := messageID(s.Role, body["ctr"].(uint64))
+	if m.Supersedes != "" {
+		s.noteSuperseded(o.StateDir, m.Supersedes, msgID)
+	}
 	s.recordMessage(o.StateDir, s.Role, msgID, m)
-	o.Emit(Event{Event: "sent", Chat: s.ID, ID: msgID, Kind: m.Kind, ReplyTo: m.ReplyTo, Size: int64(len(m.Text))})
+	o.Emit(Event{Event: "sent", Chat: s.ID, ID: msgID, Kind: m.Kind, ReplyTo: m.ReplyTo, Supersedes: m.Supersedes, Size: int64(len(m.Text))})
 	return nil
+}
+
+// noteSuperseded records that one of this side's deliveries replaced an
+// older one, so a late reply to the old one can be flagged as stale.
+func (s *chatState) noteSuperseded(dir, old, newer string) {
+	var counter chatCounter
+	readJSONFile(s.path(dir, ".counter"), &counter)
+	if counter.Superseded == nil {
+		counter.Superseded = map[string]string{}
+	}
+	counter.Superseded[old] = newer
+	writeJSONFile(s.path(dir, ".counter"), counter)
+}
+
+// blocking reports whether an unread peer event should stop a reply written
+// without it. Progress and notes do not: recv --wake exists to leave them
+// unread, and they ask nothing of the reader.
+func blocking(e Event) bool {
+	switch e.Event {
+	case "done", "proposal":
+		return true
+	case "message":
+		return e.Kind == "request" || e.Kind == "reply" || e.Kind == "delivery"
+	}
+	return false
+}
+
+// unread counts blocking peer events this side has not seen: those held back
+// by recv --wake, and those still waiting on the relay. Peeking decrypts to
+// learn a message's kind but does not move the cursor, so nothing is consumed.
+func (s *chatState) unread(ctx context.Context, cur chatCursor) (int, string, error) {
+	n, first := 0, ""
+	count := func(e Event, id string) {
+		if blocking(e) {
+			if n == 0 {
+				first = id
+			}
+			n++
+		}
+	}
+	for _, e := range cur.Held {
+		count(e, cmp.Or(e.ID, e.Event))
+	}
+	key, err := s.key()
+	if err != nil {
+		return 0, "", err
+	}
+	target, err := relayURL(s.Relay, "/v1/chats/"+s.ID+"/events")
+	if err != nil {
+		return 0, "", err
+	}
+	resp, err := request(ctx, http.MethodGet, target+"?after="+strconv.FormatUint(cur.After, 10)+"&wait=0", s.Token, nil)
+	if err != nil {
+		return 0, "", fmt.Errorf("cannot reach relay: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, "", chatError(resp)
+	}
+	var page struct {
+		Events []relayEvent `json:"events"`
+	}
+	err = json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(&page)
+	resp.Body.Close()
+	if err != nil {
+		return 0, "", fmt.Errorf("invalid relay response: %w", err)
+	}
+	for _, e := range page.Events {
+		if e.Seq <= cur.After || e.From != s.peer() {
+			continue
+		}
+		ev := Event{Event: e.Type}
+		if e.Type == "message" {
+			text, err := openChat(key, s.ID, e.From, "message", e.Ctr, e.Data)
+			if err != nil {
+				continue // recv will report it; it cannot make a reply stale
+			}
+			ev.Kind = parseMessage(text, e.From).Kind
+			count(ev, messageID(e.From, e.Ctr))
+			continue
+		}
+		count(ev, e.Type)
+	}
+	return n, first, nil
 }
 
 // parseInviteCode explains the one mistake the saved event used to invite:
@@ -706,6 +830,7 @@ type relayEvent struct {
 	Data   string `json:"data"`
 	Reason string `json:"reason"`
 	Budget int    `json:"budget"`
+	Paused bool   `json:"paused"`
 }
 
 // wakes reports whether an event should end a recv that was told to wake
@@ -917,6 +1042,20 @@ func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relay
 		}
 		m := parseMessage(text, e.From)
 		out.ID, out.Kind, out.ReplyTo, out.Text = messageID(e.From, e.Ctr), m.Kind, m.ReplyTo, m.Text
+		out.Supersedes, out.AfterPause = m.Supersedes, e.Paused
+		if m.Supersedes != "" {
+			if cur.Superseded == nil {
+				cur.Superseded = map[string]string{}
+			}
+			cur.Superseded[m.Supersedes] = out.ID
+		}
+		if m.ReplyTo != "" {
+			var counter chatCounter
+			readJSONFile(s.path(dir, ".counter"), &counter)
+			if newer, ok := counter.Superseded[m.ReplyTo]; ok {
+				out.Stale, out.SupersededBy = true, newer
+			}
+		}
 		s.recordMessage(dir, s.peer(), out.ID, m)
 	default:
 		return fail("unknown event from relay")

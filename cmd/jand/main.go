@@ -21,7 +21,7 @@ import (
 	"github.com/jaredchao/jand/internal/transfer"
 )
 
-const version = "0.3.2"
+const version = "0.4.0"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -43,7 +43,7 @@ Options (before file/code):
   --json           Newline-delimited JSON events (code is emitted immediately)
   --out DIR        Receive directory (default: ./received)
   --wait DURATION  Optional wait for verified receiver receipt (default: 0)
-  --chat           Send: also invite the receiver to a chat (needs a 0.3.2 relay)
+  --chat           Send: also invite the receiver to a chat (needs a 0.4.0 relay)
   --goal TEXT      With --chat, required: what counts as done
   --budget N       With --chat: messages allowed for the goal (default 40, max 200)
 

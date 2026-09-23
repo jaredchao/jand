@@ -1,4 +1,4 @@
-# jand chat 设计（0.3.2）
+# jand chat 设计（0.4.0）
 
 在一次性交接之外，让两台机器上的 Agent 通过同一个 Relay 来回对话。交接文档是对话的第一条：接收方先读上下文，再由本地用户决定是否进入对话。
 
@@ -14,7 +14,7 @@
 - 某一方需要用户立刻决定，执行 `chat checkpoint`，并附上原因；
 - 当前目标的预算用完，由 Relay 强制暂停（`reason=budget`）。
 
-暂停期间 Relay 不再转发消息。恢复对话需要一方 `chat propose` 提出新目标，另一方 `chat accept` 接受，双方都要事先征得各自用户的同意。任何一方的用户选择结束，就 `chat close`。
+暂停期间 Relay 只转发少量收尾消息：每方最多 3 条（`ChatPauseNotes`），不计入预算，客户端只对 `reply` 和 `note` 发出（请求体 `closing=true`），Relay 给它们加上 `paused` 标记。消息类型是加密的，所以「只有 reply 和 note」依赖诚实客户端，条数上限由 Relay 执行。其他消息一律 409。恢复对话需要一方 `chat propose` 提出新目标，另一方 `chat accept` 接受，双方都要事先征得各自用户的同意。任何一方的用户选择结束，就 `chat close`。
 
 Agent 判断达成，是正常的出口；预算耗尽，是 Agent 判断失灵时的保险。Relay 看不到目标内容，但能数消息条数，所以强制暂停不依赖 Agent 自觉。整个对话 200 条的上限保留，只作为防滥用的底线，不承担「任务完成」的含义。
 
@@ -55,7 +55,11 @@ Agent 判断达成，是正常的出口；预算耗尽，是 Agent 判断失灵�
 
 ## 消息类型与编号
 
-消息明文是一个 JSON 信封 `{"kind", "reply_to", "text"}`，和正文一起加密，Relay 看不到类型。`kind` 取 `note`（默认）、`progress`、`request`、`reply`、`delivery`；`reply` 必须带 `reply_to`，其他类型可选。每条消息的编号由发送方角色首字母加计数构成（`h3` 为发起方第 3 个加密载荷，`g2` 为接收方第 2 个），双方无需协商就能算出同一个编号。`reply_to` 只能指向对方的消息；收到格式不对的信封时按 `note` 显示原文，不丢弃。
+消息明文是一个 JSON 信封 `{"kind", "reply_to", "supersedes", "text"}`，和正文一起加密，Relay 看不到类型。`kind` 取 `note`（默认）、`progress`、`request`、`reply`、`delivery`；`reply` 必须带 `reply_to`，其他类型可选。每条消息的编号由发送方角色首字母加计数构成（`h3` 为发起方第 3 个加密载荷，`g2` 为接收方第 2 个），双方无需协商就能算出同一个编号。`reply_to` 只能指向对方的消息；收到格式不对的信封时按 `note` 显示原文，不丢弃。
+
+**先读再回**：客户端发 reply、request、delivery 之前，先以 `wait=0` 查看 Relay 上还没取回的事件（不推进游标，必要时在本地解密看类型），加上本地因 `--wake` 暂存的事件。只要有对方的 request、reply、delivery、done 或 proposal 未读，就拒绝发送（退出码 5），除非加 `--anyway`。progress 和 note 不算，否则 `--wake` 就没法用了。这针对的是 0.3.2 实测中四次消息交叉：每次都是一方在没读到对方新版本时就回复了旧版本。
+
+**取代关系**：信封可带 `supersedes`（仅 delivery，只能指向己方的消息）。接收方记住「旧编号 → 新编号」，回复被取代的交付时被拒；发送方收到对方针对自己已取代交付的回复时，事件带 `stale=true` 与 `superseded_by`。两者都只在客户端，Relay 不参与。
 
 `recv --wake KINDS` 在客户端过滤：非唤醒类型的消息照常从 Relay 取回、推进游标，但先保存在本地游标文件中，等到唤醒类型的消息、任何非消息事件或等待超时时，再按原顺序一起输出。Relay 不参与，也不知道哪些消息被暂缓。对方的消息只能提供信息或提出请求，不能替本地用户批准任何动作。
 

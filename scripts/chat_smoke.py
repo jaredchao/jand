@@ -70,6 +70,19 @@ def main():
             got = events(jand(host, "chat", "recv", "--json", "--wait", "5s", chat))
             assert got[0]["text"] == '[{"id":1}]' and got[0]["reply_to"] == "h2", got
 
+            # A delivery written without reading the peer's delivery is refused (exit 5).
+            events(jand(guest, "chat", "send", "--json", "--kind", "delivery", chat, "schema v1"))
+            blind = jand(host, "chat", "send", "--kind", "delivery", chat, "页面 v1")
+            assert blind.returncode == 5 and "unread" in blind.stderr, blind
+            got = events(jand(host, "chat", "recv", "--json", chat))
+            assert got[0]["id"] == "g2", got
+            events(jand(guest, "chat", "send", "--json", "--kind", "delivery", "--supersedes", "g2", chat, "schema v2"))
+            events(jand(host, "chat", "recv", "--json", chat))
+            stale = jand(host, "chat", "send", "--kind", "reply", "--reply-to", "g2", chat, "v1 可以")
+            assert stale.returncode == 1 and "superseded by g3" in stale.stderr, stale
+            events(jand(host, "chat", "send", "--json", "--kind", "reply", "--reply-to", "g3", chat, "v2 可以"))
+            events(jand(guest, "chat", "recv", "--json", chat))
+
             # Each side reports its share done; the relay pauses once both have.
             events(jand(guest, "chat", "done", "--json", "--summary", "后端完成", chat))
             got = events(jand(host, "chat", "recv", "--json", "--wait", "5s", chat))
@@ -78,6 +91,10 @@ def main():
             for side in (host, guest):
                 got = events(jand(side, "chat", "recv", "--json", "--wait", "5s", chat))
                 assert got[-1]["event"] == "checkpoint" and got[-1]["reason"] == "all_done", got
+            # A closing note still passes the pause, marked as such.
+            events(jand(guest, "chat", "send", "--json", chat, "收尾：以 g3 为准"))
+            got = events(jand(host, "chat", "recv", "--json", chat))
+            assert got[0]["after_pause"] is True, got
             events(jand(guest, "chat", "propose", "--json", "--goal", "补 /users 分页", chat))
             events(jand(host, "chat", "recv", "--json", "--wait", "5s", chat))
             events(jand(host, "chat", "accept", "--json", chat))
@@ -88,7 +105,7 @@ def main():
             events(jand(host, "chat", "checkpoint", "--json", "--summary", "字段已对齐", chat))
             got = events(jand(guest, "chat", "recv", "--json", "--wait", "5s", chat))
             assert got[0]["event"] == "checkpoint" and got[0]["text"] == "字段已对齐", got
-            paused = jand(guest, "chat", "send", chat, "还能说吗")
+            paused = jand(guest, "chat", "send", "--kind", "request", chat, "还能说吗")
             assert paused.returncode == 1 and "paused" in paused.stderr, paused
             events(jand(guest, "chat", "propose", "--json", "--goal", "再对 /orders", "--budget", "5", chat))
             got = events(jand(host, "chat", "recv", "--json", "--wait", "5s", chat))
@@ -106,10 +123,11 @@ def main():
 
             transcript = (host / "chats" / f"{chat}.transcript.jsonl").read_text(encoding="utf-8").splitlines()
             kinds = [json.loads(line)["kind"] for line in transcript]
-            assert kinds == ["message", "message", "message", "done", "done", "checkpoint", "proposal", "resumed",
+            assert kinds == ["message", "message", "message", "message", "message", "message", "done", "done", "checkpoint",
+                             "message", "proposal", "resumed",
                              "checkpoint", "proposal", "resumed", "closed"], kinds
             print(json.dumps({"invite_and_join": "passed", "background_recv_woken_by_peer": f"passed ({woke:.2f}s)",
-                              "progress_held_until_request": "passed", "reply_to": "passed", "both_done_pauses": "passed",
+                              "progress_held_until_request": "passed", "reply_to": "passed", "both_done_pauses": "passed", "unread_blocks_exit_5": "passed", "supersedes": "passed", "closing_note_after_pause": "passed",
                               "stdin_message": "passed", "checkpoint_propose_accept": "passed",
                               "close_and_exit_code_4": "passed", "transcript": "passed"}, indent=2))
     finally:

@@ -44,13 +44,17 @@ type Config struct {
 	ChatLifetime      time.Duration
 	ChatEndedTTL      time.Duration // how long the end event stays readable
 	ChatMaxWait       time.Duration // longest single long-poll
+	// ChatPauseNotes is how many closing messages each side may send while
+	// the chat is paused, outside the budget, to tie up loose ends.
+	ChatPauseNotes int
 }
 
 func DefaultConfig() Config {
 	return Config{MaxSessions: 128, MaxStoredBytes: 64 * 1024 * 1024, TTL: 10 * time.Minute, UploadTimeout: 2 * time.Minute,
 		MaxChats: 64, MaxChatBytes: 16 * 1024 * 1024, ChatMaxMessages: 200, ChatDefaultBudget: 40,
 		ChatInviteTTL: 15 * time.Minute, ChatDecideTTL: 30 * time.Minute, ChatIdleTTL: 60 * time.Minute,
-		ChatLifetime: 6 * time.Hour, ChatEndedTTL: 10 * time.Minute, ChatMaxWait: 20 * time.Second}
+		ChatLifetime: 6 * time.Hour, ChatEndedTTL: 10 * time.Minute, ChatMaxWait: 20 * time.Second,
+		ChatPauseNotes: 3}
 }
 
 type session struct {
@@ -100,6 +104,7 @@ func New(config Config) *Relay {
 	positive(&config.ChatLifetime, d.ChatLifetime)
 	positive(&config.ChatEndedTTL, d.ChatEndedTTL)
 	positive(&config.ChatMaxWait, d.ChatMaxWait)
+	positive(&config.ChatPauseNotes, d.ChatPauseNotes)
 	logger := config.Logger
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)

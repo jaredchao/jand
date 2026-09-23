@@ -149,7 +149,7 @@ def quickstart(windows, relay, signed=False, notarized=False):
 发送命令成功只表示密文已暂存；若要等待接收方保存确认，发送时加 `--wait 10m`。
 每次最多传 10 MiB 单文件，接收码只能领取一次；领取失败后由发送方生成新码。
 
-对话（0.3 新增，需要 0.3.2 的 Relay）：发送时加 `--chat --goal '<什么算做完>'`，交接文件会作为对话邀请发出；双方各自 `chat done` 报告完成，或消息预算用完时对话暂停，双方用户都同意新目标才继续。对方同意后执行 `{exe} chat join --relay {relay} '<接收码>'`，之后双方用 `{exe} chat send <chat> 文本` 发消息，用 `{exe} chat recv --wait 30m <chat>` 收消息。详见 `{exe} chat --help` 与 AGENT.md。
+对话（0.3 新增，需要 0.4.0 的 Relay）：发送时加 `--chat --goal '<什么算做完>'`，交接文件会作为对话邀请发出；双方各自 `chat done` 报告完成，或消息预算用完时对话暂停，双方用户都同意新目标才继续。对方同意后执行 `{exe} chat join --relay {relay} '<接收码>'`，之后双方用 `{exe} chat send <chat> 文本` 发消息，用 `{exe} chat recv --wait 30m <chat>` 收消息。详见 `{exe} chat --help` 与 AGENT.md。
 
 {provenance}
 更多说明见构建信息及随包的模板。二进制 SHA-256 在 BUILD-INFO.json 中。

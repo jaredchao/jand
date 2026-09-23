@@ -76,3 +76,13 @@
 - AGENT.md 新增「协作」一节（干活为主、卡住发请求、共享资源归属、不越界），交接模板新增「Collaboration」一节；接收码放在回复末尾。
 - `go test -race`、`go vet`、`make smoke`（新增进展暂缓、reply_to、双方完成暂停）通过。
 - 仍未验证：Agent 正在连续调用工具时被后台 `recv` 唤醒的时机。
+
+## 0.4.0：消息交叉、逐字核对与暂停收尾
+
+依据 0.3.2 与 Jared 侧 Agent 的跨机器认知对齐实测（6 分钟、15 条消息，终稿逐字一致，但暴露三个问题）修改。按商定规则，对话协议不兼容即升次版本号。
+
+- 消息交叉（实测 4 次，对方每次都在审阅已被替换的旧版本）：发送 reply、request、delivery 前检查对方未读的 request/reply/delivery/done/proposal，有则拒绝（退出码 5），`--anyway` 可越过；progress 和 note 不拦，以免与 `--wake` 冲突。delivery 可带 `--supersedes`，回复旧版本会被拒绝或被标记为 `stale`。
+- 逐字核对失败（两边哈希只差末尾换行）：`chat send --file` 改为按原字节发送；标准输入仍去掉末尾换行。
+- 双方 done 后连补充说明都发不出：暂停期间每方可发最多 3 条 reply 或 note，不计预算，带 `after_pause` 标记；request 与 delivery 仍被拒绝。Relay 新增配置 `ChatPauseNotes`。
+- 修改中发现并修正的设计冲突：最初把所有未读消息都算作阻塞，会让使用 `--wake` 的一方永远发不出回复。
+- `go test -race`、`go vet`、`make smoke`（新增：未读拦截与退出码 5、supersedes、暂停后收尾消息）、`compat_smoke.py` 通过。

@@ -46,6 +46,8 @@ type chatEvent struct {
 	Data   string `json:"data,omitempty"`
 	Reason string `json:"reason,omitempty"`
 	Budget int    `json:"budget,omitempty"`
+	// Paused marks a closing message sent while the chat was paused.
+	Paused bool `json:"paused,omitempty"`
 }
 
 type chatRoom struct {
@@ -58,6 +60,7 @@ type chatRoom struct {
 	messages            int             // over the whole chat, against ChatMaxMessages
 	budget, used        int             // for the current goal
 	done                map[string]bool // parties that reported their share of the goal done
+	pauseNotes          map[string]int  // closing messages sent during the current pause
 	proposal            *chatEvent
 	waiters             int
 	notify              chan struct{}
@@ -222,7 +225,7 @@ func (r *Relay) chatCreate(w http.ResponseWriter, req *http.Request, room string
 	}
 	now := time.Now()
 	r.chats[room] = &chatRoom{host: body.Host, invite: body.Invite, state: chatPending, created: now, changed: now,
-		budget: body.Budget, queue: map[string][]chatEvent{}, done: map[string]bool{}, notify: make(chan struct{})}
+		budget: body.Budget, queue: map[string][]chatEvent{}, done: map[string]bool{}, pauseNotes: map[string]int{}, notify: make(chan struct{})}
 	r.log.Info("chat created", "room", tag(room), "budget", body.Budget, "chats", len(r.chats))
 	w.WriteHeader(http.StatusCreated)
 }
@@ -248,6 +251,10 @@ type chatBody struct {
 	Data   string
 	Budget int
 	Seq    uint64
+	// Closing is set by the client for reply and note messages: the only
+	// kinds that may pass a pause. The kind itself is encrypted, so this
+	// relies on honest clients; the count limit does not.
+	Closing bool
 }
 
 // sealed reports whether the body carries a well-formed encrypted payload.
@@ -380,7 +387,29 @@ func (r *Relay) chatParty(w http.ResponseWriter, req *http.Request, room, action
 	switch action {
 	case "messages":
 		if c.state == chatPaused {
-			http.Error(w, "chat paused at a checkpoint; propose or accept a goal first", http.StatusConflict)
+			// A few closing replies or notes may pass, outside the budget, so
+			// messages that crossed the pause can still be answered. Nothing
+			// that asks for more work does.
+			if !body.Closing {
+				http.Error(w, "chat paused at a checkpoint; only closing replies or notes may be sent until a new goal is accepted", http.StatusConflict)
+				return
+			}
+			if c.pauseNotes[from] >= r.config.ChatPauseNotes {
+				http.Error(w, "closing message limit reached for this pause", http.StatusConflict)
+				return
+			}
+			if c.messages >= r.config.ChatMaxMessages {
+				r.endChatLocked(room, c, chatEvent{Type: "expired", Reason: "limit"}, "host", "guest")
+				http.Error(w, "chat message limit reached", http.StatusGone)
+				return
+			}
+			e := r.pushLocked(c, peer, chatEvent{Type: "message", From: from, Ctr: body.Ctr, Data: body.Data, Paused: true})
+			c.pauseNotes[from]++
+			c.messages++
+			c.wake()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]uint64{"seq": e.Seq})
 			return
 		}
 		if c.messages >= r.config.ChatMaxMessages {
@@ -459,6 +488,7 @@ func (r *Relay) chatParty(w http.ResponseWriter, req *http.Request, room, action
 		}
 		c.budget, c.used, c.proposal = p.Budget, 0, nil
 		clear(c.done)
+		clear(c.pauseNotes)
 		r.setStateLocked(c, chatActive)
 		r.log.Info("chat resumed", "room", tag(room), "accepted_by", from, "budget", c.budget)
 	}

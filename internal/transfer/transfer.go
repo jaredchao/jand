@@ -72,6 +72,14 @@ type Event struct {
 	ID      string `json:"id,omitempty"`
 	Kind    string `json:"kind,omitempty"`
 	ReplyTo string `json:"reply_to,omitempty"`
+	// Supersedes names an earlier delivery from the same side that this
+	// one replaces. Stale marks a reply to one of your deliveries that you
+	// had already superseded (by SupersededBy): it answers an old version.
+	Supersedes   string `json:"supersedes,omitempty"`
+	Stale        bool   `json:"stale,omitempty"`
+	SupersededBy string `json:"superseded_by,omitempty"`
+	// AfterPause marks a closing message sent while the chat was paused.
+	AfterPause bool `json:"after_pause,omitempty"`
 }
 
 type Options struct {

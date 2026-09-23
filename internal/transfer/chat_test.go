@@ -321,8 +321,8 @@ func TestChatCheckpointAndNewGoal(t *testing.T) {
 	if types(ev) != "checkpoint" || ev[0].By != "peer" || ev[0].Text != "字段已对齐：id, name" || !ev[0].Untrusted {
 		t.Fatalf("guest sees checkpoint: %+v", ev)
 	}
-	if err := ChatSend(ctx, id, ChatMessage{Text: "继续"}, guest.o); err == nil || !strings.Contains(err.Error(), "paused") {
-		t.Fatalf("message while paused: %v", err)
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "request", Text: "继续"}, guest.o); err == nil || !strings.Contains(err.Error(), "paused") {
+		t.Fatalf("request while paused: %v", err)
 	}
 	if err := ChatAccept(ctx, id, host.o); err == nil {
 		t.Fatal("accepted with no proposal")
@@ -360,7 +360,7 @@ func TestChatCheckpointAndNewGoal(t *testing.T) {
 	if ev, _ := host.recv(ctx, id, 0); types(ev) != "checkpoint" || ev[0].By != "relay" {
 		t.Fatalf("host sees budget checkpoint: %+v", ev)
 	}
-	if err := ChatSend(ctx, id, ChatMessage{Text: "三"}, host.o); err == nil || !strings.Contains(err.Error(), "paused") {
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "request", Text: "三"}, host.o); err == nil || !strings.Contains(err.Error(), "paused") {
 		t.Fatalf("message over budget: %v", err)
 	}
 }
@@ -483,5 +483,78 @@ func TestChatDoneBothSides(t *testing.T) {
 	// A new goal starts with nobody done.
 	if err := ChatDone(ctx, id, "", host.o); err != nil {
 		t.Fatalf("done after resume: %v", err)
+	}
+}
+
+func TestChatUnreadBlocksAndSupersedes(t *testing.T) {
+	ctx, host, guest, id := activePair(t)
+	send := func(sd *side, m ChatMessage) error { return ChatSend(ctx, id, m, sd.o) }
+	if err := send(host, ChatMessage{Kind: "delivery", Text: "草稿 v1"}); err != nil { // h1
+		t.Fatal(err)
+	}
+	// The guest has not read h1: a reply now would answer blind.
+	err := send(guest, ChatMessage{Kind: "request", Text: "字段？"})
+	if !errors.Is(err, ErrUnread) || !strings.Contains(err.Error(), "h1") {
+		t.Fatalf("unread not caught: %v", err)
+	}
+	// Progress and notes are never held back, and never block the peer:
+	// the host can still deliver with g1 (progress) unread.
+	if err := send(guest, ChatMessage{Kind: "progress", Text: "在写"}); err != nil {
+		t.Fatal(err)
+	}
+	guest.recv(ctx, id, 0)
+	// The host replaces h1 before the guest's review arrives.
+	if err := send(host, ChatMessage{Kind: "delivery", Supersedes: "h1", Text: "草稿 v2"}); err != nil { // h2
+		t.Fatal(err)
+	}
+	if err := send(host, ChatMessage{Kind: "delivery", Supersedes: "g1", Text: "x"}); err == nil {
+		t.Fatal("superseded the peer's message")
+	}
+	// Written against h1 without reading h2: --anyway, as a crossing would.
+	if err := send(guest, ChatMessage{Kind: "reply", ReplyTo: "h1", Text: "v1 有问题", Anyway: true}); err != nil {
+		t.Fatal(err)
+	}
+	ev, _ := host.recv(ctx, id, time.Second)
+	last := ev[len(ev)-1]
+	if !last.Stale || last.SupersededBy != "h2" || last.ReplyTo != "h1" {
+		t.Fatalf("stale reply not flagged: %+v", ev)
+	}
+	ev, _ = guest.recv(ctx, id, time.Second)
+	if ev[0].Supersedes != "h1" {
+		t.Fatalf("supersedes not shown: %+v", ev)
+	}
+	// Having read h2, the guest may not reply to h1 without --anyway.
+	if err := send(guest, ChatMessage{Kind: "reply", ReplyTo: "h1", Text: "再说 v1"}); err == nil || !strings.Contains(err.Error(), "superseded by h2") {
+		t.Fatalf("reply to superseded: %v", err)
+	}
+	if err := send(guest, ChatMessage{Kind: "reply", ReplyTo: "h2", Text: "v2 可以"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestChatClosingNotesWhilePaused(t *testing.T) {
+	ctx, host, guest, id := activePair(t)
+	ChatDone(ctx, id, "", host.o)
+	ChatDone(ctx, id, "", guest.o)
+	host.recv(ctx, id, time.Second)
+	guest.recv(ctx, id, time.Second)
+	for i := range 3 {
+		if err := ChatSend(ctx, id, ChatMessage{Kind: "note", Text: "收尾"}, host.o); err != nil {
+			t.Fatalf("closing note %d: %v", i, err)
+		}
+	}
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "note", Text: "第四条"}, host.o); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("fourth closing note: %v", err)
+	}
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "delivery", Text: "新东西"}, guest.o); err == nil {
+		t.Fatal("delivery passed a pause")
+	}
+	ev, _ := guest.recv(ctx, id, time.Second)
+	if types(ev) != "message,message,message" || !ev[0].AfterPause {
+		t.Fatalf("closing notes: %+v", ev)
+	}
+	// The guest still has its own three, even as a reply.
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "reply", ReplyTo: "h1", Text: "收到"}, guest.o); err != nil {
+		t.Fatal(err)
 	}
 }
