@@ -218,7 +218,7 @@ def main():
         for source in (ROOT / "deploy").iterdir():
             if source.is_file():
                 if source.name == "INSTALL.md":
-                    (kit / source.name).write_text(source.read_text())
+                    (kit / source.name).write_text(source.read_text().replace("<版本>", version))
                 elif source.name in {"jand-relay.supervisor.conf", "nginx.conf.example", "Caddyfile.example"}:
                     shutil.copyfile(source, kit / source.name)
         (kit / "SHA256SUMS.txt").write_text("".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n" for p in linux))
@@ -226,7 +226,7 @@ def main():
         archive(kit, deployment, windows=True)
         produced.append(deployment)
         (output / "SHA256SUMS.txt").write_text("".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n" for p in produced))
-        shutil.copyfile(ROOT / "deploy/INSTALL.md", output / "部署与分发说明.md")
+        (output / "部署与分发说明.md").write_text((ROOT / "deploy/INSTALL.md").read_text().replace("<版本>", version))
     print(f"Created {len(produced)} archives in {output}")
 
 
