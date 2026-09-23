@@ -1,0 +1,13 @@
+{
+  "name": "review",
+  "title": "交付与审核：接收方实现，发起方审核",
+  "done_rule": "any",
+  "pause_notes": 2,
+  "budget": 30,
+  "kinds": ["request", "reply", "delivery"],
+  "roles": {
+    "host": "审核：提出要求，回复审核意见，不改对方的产出",
+    "guest": "实现：按要求交付，回应审核意见"
+  },
+  "instructions": "接收方按交接包实现并以 delivery 交付，写明路径与验证方法；修改后的版本用 --supersedes 标明取代哪一份。发起方用 reply 给出审核意见，需要补充信息时用 request。接收方认为可以验收时 chat done：对话随即暂停，由双方的用户决定验收结束还是提出新目标。"
+}

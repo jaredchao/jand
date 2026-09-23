@@ -1,0 +1,22 @@
+{
+  "listen": "127.0.0.1:8787",
+  "handoff": {
+    "max_sessions": 128,
+    "max_stored_bytes": 67108864,
+    "ttl": "10m",
+    "upload_timeout": "2m"
+  },
+  "chat": {
+    "max_chats": 64,
+    "max_stored_bytes": 16777216,
+    "max_messages": 200,
+    "default_budget": 40,
+    "max_pause_notes": 3,
+    "invite_ttl": "15m",
+    "decide_ttl": "30m",
+    "idle_ttl": "60m",
+    "lifetime": "6h",
+    "ended_ttl": "10m",
+    "max_wait": "20s"
+  }
+}

@@ -261,3 +261,51 @@ func itoa(n uint64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
 }
+
+func createRoom(t *testing.T, base, extra string) {
+	t.Helper()
+	body := `{"host":"` + tok(0) + `","invite":"` + tok(1) + `"` + extra + `}`
+	if got, reason := call(t, base, "PUT", "/v1/chats/"+chatRoom1, "", body); got != 201 {
+		t.Fatalf("create %s: %d %s", extra, got, reason)
+	}
+}
+
+func TestChatWorkflowTerms(t *testing.T) {
+	r := New(DefaultConfig())
+	t.Cleanup(r.Close)
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+	p := "/v1/chats/" + chatRoom1
+	if got, reason := call(t, srv.URL, "PUT", p, "", `{"host":"`+tok(0)+`","invite":"`+tok(1)+`","pause_notes":4}`); got != 400 || !strings.Contains(reason, "limit of 3") {
+		t.Fatalf("pause_notes over the relay limit: %d %s", got, reason)
+	}
+	createRoom(t, srv.URL, `,"done_rule":"any","pause_notes":0,"charter":"`+cipher30+`"`)
+	// The guest reads the terms with the invite token before joining.
+	_, terms := call(t, srv.URL, "GET", p+"/charter", tok(1), "")
+	if !strings.Contains(terms, `"done_rule":"any"`) || !strings.Contains(terms, `"pause_notes":0`) || !strings.Contains(terms, cipher30) {
+		t.Fatalf("terms: %s", terms)
+	}
+	if got, _ := call(t, srv.URL, "GET", p+"/charter", tok(3), ""); got != 404 {
+		t.Fatalf("stranger reads the charter: %d", got)
+	}
+	// An older client would misread an any-rule pause, so it may not join.
+	if got, reason := call(t, srv.URL, "POST", p+"/join", tok(1), `{"guest":"`+tok(2)+`"}`); got != 409 || !strings.Contains(reason, "0.4.1") {
+		t.Fatalf("old client joins an any-rule chat: %d %s", got, reason)
+	}
+	if got, _ := call(t, srv.URL, "POST", p+"/join", tok(1), `{"guest":"`+tok(2)+`","features":["charter"]}`); got != 204 {
+		t.Fatalf("join: %d", got)
+	}
+	// Under done_rule=any the first done pauses the chat.
+	if got, _ := call(t, srv.URL, "POST", p+"/done", tok(2), ""); got != 204 {
+		t.Fatalf("done: %d", got)
+	}
+	h := events(t, srv.URL, p+"/events", tok(0))
+	last := h.Events[len(h.Events)-1]
+	if h.State != "paused" || last.Type != "checkpoint" || last.Reason != "any_done" {
+		t.Fatalf("any_done: %+v", h)
+	}
+	// pause_notes=0: no closing messages for this chat.
+	if got, _ := call(t, srv.URL, "POST", p+"/messages", tok(0), `{"ctr":1,"data":"`+cipher30+`","closing":true}`); got != 409 {
+		t.Fatalf("closing note with pause_notes=0: %d", got)
+	}
+}

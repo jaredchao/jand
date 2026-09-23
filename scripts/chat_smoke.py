@@ -121,13 +121,28 @@ def main():
             late = jand(host, "chat", "send", chat, "还在吗")
             assert late.returncode == 4, late
 
+            # A workflow from the repository: review, where the implementer's done pauses at once.
+            review = pathlib.Path(__file__).resolve().parents[1] / "workflows" / "review.json"
+            queued = events(jand(host, "send", "--chat", "--workflow", str(review), "--goal", "按 review 流程交付", "--json", "--relay", url, str(packet)))[0]
+            chat2 = queued["chat"]
+            saved = events(jand(guest, "--json", "--relay", url, "--out", str(root / "inbox"), queued["code"]))[-1]
+            assert saved["workflow"]["name"] == "review" and saved["workflow"]["done_rule"] == "any" and saved["budget"] == 30, saved
+            joined = events(jand(guest, "chat", "join", "--json", "--relay", url, queued["code"]))[0]
+            assert joined["workflow"]["name"] == "review"
+            refused = jand(guest, "chat", "send", chat2, "随便聊聊")
+            assert refused.returncode == 1 and "does not allow note" in refused.stderr, refused
+            events(jand(guest, "chat", "send", "--json", "--kind", "delivery", chat2, "实现在 src/"))
+            events(jand(guest, "chat", "done", "--json", "--summary", "请验收", chat2))
+            got = events(jand(host, "chat", "recv", "--json", "--wait", "5s", chat2))
+            assert [e["event"] for e in got][-1] == "checkpoint" and got[-1]["reason"] == "any_done", got
+
             transcript = (host / "chats" / f"{chat}.transcript.jsonl").read_text(encoding="utf-8").splitlines()
             kinds = [json.loads(line)["kind"] for line in transcript]
             assert kinds == ["message", "message", "message", "message", "message", "message", "done", "done", "checkpoint",
                              "message", "proposal", "resumed",
                              "checkpoint", "proposal", "resumed", "closed"], kinds
             print(json.dumps({"invite_and_join": "passed", "background_recv_woken_by_peer": f"passed ({woke:.2f}s)",
-                              "progress_held_until_request": "passed", "reply_to": "passed", "both_done_pauses": "passed", "unread_blocks_exit_5": "passed", "supersedes": "passed", "closing_note_after_pause": "passed",
+                              "progress_held_until_request": "passed", "reply_to": "passed", "both_done_pauses": "passed", "unread_blocks_exit_5": "passed", "supersedes": "passed", "closing_note_after_pause": "passed", "workflow_review_any_done": "passed",
                               "stdin_message": "passed", "checkpoint_propose_accept": "passed",
                               "close_and_exit_code_4": "passed", "transcript": "passed"}, indent=2))
     finally:

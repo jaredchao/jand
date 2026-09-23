@@ -1,12 +1,16 @@
 package transfer
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -556,5 +560,168 @@ func TestChatClosingNotesWhilePaused(t *testing.T) {
 	// The guest still has its own three, even as a reply.
 	if err := ChatSend(ctx, id, ChatMessage{Kind: "reply", ReplyTo: "h1", Text: "收到"}, guest.o); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func reviewWorkflow() *Workflow {
+	one := 1
+	return &Workflow{Name: "review", DoneRule: "any", PauseNotes: &one, Budget: 12,
+		Kinds: []string{"request", "reply", "delivery"}, Roles: map[string]string{"host": "审核", "guest": "实现"},
+		Instructions: "实现方交付，审核方回复意见。"}
+}
+
+func TestChatWorkflowEndToEnd(t *testing.T) {
+	_, srv := server(t, relay.DefaultConfig())
+	ctx := context.Background()
+	host, guest := newSide(t, srv.URL), newSide(t, srv.URL)
+	o := withChat(host.o)
+	o.Workflow = reviewWorkflow()
+	if err := Send(ctx, fixture(t, []byte("x")), o); err != nil {
+		t.Fatal(err)
+	}
+	id, rawCode := host.events[0].Chat, host.events[0].Code
+	if _, err := Receive(ctx, rawCode, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	saved := guest.events[len(guest.events)-1]
+	if saved.Message != "" || saved.Workflow == nil || saved.Workflow.Name != "review" || saved.Workflow.DoneRule != "any" ||
+		saved.Budget != 12 || saved.Workflow.Roles["guest"] != "实现" {
+		t.Fatalf("saved: %+v %+v", saved, saved.Workflow)
+	}
+	if _, err := ChatJoin(ctx, rawCode, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	host.recv(ctx, id, 0)
+	// The workflow leaves out notes and progress.
+	if err := ChatSend(ctx, id, ChatMessage{Text: "闲聊"}, guest.o); err == nil || !strings.Contains(err.Error(), "does not allow note") {
+		t.Fatalf("note under review workflow: %v", err)
+	}
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "delivery", Text: "实现完成"}, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	// done_rule=any: the implementer's done pauses the chat for acceptance.
+	if err := ChatDone(ctx, id, "请验收", guest.o); err != nil {
+		t.Fatal(err)
+	}
+	ev, _ := host.recv(ctx, id, time.Second)
+	if last := ev[len(ev)-1]; last.Event != "checkpoint" || last.Reason != "any_done" {
+		t.Fatalf("any_done: %+v", ev)
+	}
+	// One closing reply each, as the workflow says.
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "reply", ReplyTo: "g1", Text: "收到"}, host.o); err != nil {
+		t.Fatal(err)
+	}
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "reply", ReplyTo: "g1", Text: "再补一句", Anyway: true}, host.o); err == nil {
+		t.Fatal("second closing note allowed with pause_notes=1")
+	}
+}
+
+// tamper rewrites the relay's charter answer, as a dishonest relay could.
+func tamper(t *testing.T, target string, edit func(map[string]any)) *httptest.Server {
+	u, _ := url.Parse(target)
+	proxy := httputil.NewSingleHostReverseProxy(u)
+	proxy.ModifyResponse = func(r *http.Response) error {
+		if !strings.HasSuffix(r.Request.URL.Path, "/charter") || r.StatusCode != 200 {
+			return nil
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		edit(body)
+		data, _ := json.Marshal(body)
+		r.Body = io.NopCloser(bytes.NewReader(data))
+		r.ContentLength = int64(len(data))
+		r.Header.Set("Content-Length", strconv.Itoa(len(data)))
+		return nil
+	}
+	s := httptest.NewServer(proxy)
+	t.Cleanup(s.Close)
+	return s
+}
+
+func TestChatCharterTamperingIsCaught(t *testing.T) {
+	_, srv := server(t, relay.DefaultConfig())
+	ctx := context.Background()
+	host := newSide(t, srv.URL)
+	o := withChat(host.o)
+	o.Workflow = reviewWorkflow()
+	if err := Send(ctx, fixture(t, []byte("x")), o); err != nil {
+		t.Fatal(err)
+	}
+	rawCode := host.events[0].Code
+	// The relay claims a looser rule than the host sealed.
+	lying := tamper(t, srv.URL, func(b map[string]any) { b["done_rule"] = "all" })
+	guest := newSide(t, lying.URL)
+	if _, err := Receive(ctx, rawCode, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	saved := guest.events[len(guest.events)-1]
+	if saved.Workflow != nil || !strings.Contains(saved.Message, "do not join") {
+		t.Fatalf("tampered terms accepted: %+v", saved)
+	}
+	if _, err := ChatJoin(ctx, rawCode, guest.o); err == nil || !strings.Contains(err.Error(), "not joining") {
+		t.Fatalf("joined despite tampering: %v", err)
+	}
+}
+
+func TestChatWorkflowNeedsCapableRelay(t *testing.T) {
+	_, srv := server(t, relay.DefaultConfig())
+	// A 0.4.0 relay: everything but the charter endpoint.
+	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/charter") {
+			http.NotFound(w, r)
+			return
+		}
+		u, _ := url.Parse(srv.URL)
+		httputil.NewSingleHostReverseProxy(u).ServeHTTP(w, r)
+	}))
+	defer old.Close()
+	ctx := context.Background()
+	host := newSide(t, old.URL)
+	o := withChat(host.o)
+	o.Workflow = reviewWorkflow()
+	if err := Send(ctx, fixture(t, []byte("x")), o); err == nil || !strings.Contains(err.Error(), "0.4.1") {
+		t.Fatalf("workflow on an old relay: %v", err)
+	}
+	// The default workflow still works there, exactly as 0.4.0 did.
+	host.events = nil
+	if err := Send(ctx, fixture(t, []byte("x")), withChat(host.o)); err != nil {
+		t.Fatal(err)
+	}
+	guest := newSide(t, old.URL)
+	if _, err := Receive(ctx, host.events[0].Code, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	if saved := guest.events[len(guest.events)-1]; saved.Message != "" || saved.Workflow == nil || saved.Workflow.Name != "default" {
+		t.Fatalf("default workflow on old relay: %+v", saved)
+	}
+}
+
+func TestWorkflowValidate(t *testing.T) {
+	good := DefaultWorkflow()
+	if err := good.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	eleven := 11
+	for name, w := range map[string]Workflow{
+		"no name":           {DoneRule: "all"},
+		"rule":              {Name: "x", DoneRule: "some"},
+		"unknown kind":      {Name: "x", Kinds: []string{"shout"}},
+		"request, no reply": {Name: "x", Kinds: []string{"request", "delivery"}},
+		"pause ceiling":     {Name: "x", PauseNotes: &eleven},
+		"third role":        {Name: "x", Roles: map[string]string{"observer": "x"}},
+		"path in name":      {Name: "../x"},
+	} {
+		if err := w.Validate(); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+}
+
+func TestRepositoryWorkflowsAreValid(t *testing.T) {
+	for _, name := range []string{"pair-dev", "review"} {
+		w, err := LoadWorkflow("../../workflows/" + name + ".json")
+		if err != nil || w.Name != name {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }

@@ -79,11 +79,7 @@ func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
 	fs := flag.NewFlagSet("jand chat "+sub, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {}
-	url := os.Getenv("JAND_RELAY")
-	if url == "" {
-		url = "http://127.0.0.1:8787"
-	}
-	fs.StringVar(&url, "relay", url, "relay URL")
+	url := fs.String("relay", "", "relay URL")
 	jsonOutput := fs.Bool("json", false, "JSON events")
 	wait := fs.Duration("wait", 0, "recv wait")
 	reason := fs.String("reason", "", "decline reason")
@@ -108,9 +104,19 @@ func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
 		chatUsage(stderr)
 		return 2
 	}
+	cfg, err := loadClientConfig()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	relayURL, _ := cfg.relayURL(*url, set["relay"])
+	if !set["wake"] && len(cfg.Chat.RecvWake) > 0 {
+		*wake = strings.Join(cfg.Chat.RecvWake, ",")
+	}
 	emit := emitter(*jsonOutput, out, stderr)
-	o := transfer.Options{RelayURL: url, Emit: emit}
-	var err error
+	o := transfer.Options{RelayURL: relayURL, Emit: emit}
 	switch sub {
 	case "join":
 		if fs.NArg() != 1 {
@@ -233,6 +239,39 @@ func printable(s string) string {
 	}, s)
 }
 
+// printWorkflow shows a non-default workflow the way the goal is shown: as
+// the other side's proposal, for the local user to accept or not.
+func printWorkflow(out io.Writer, w *transfer.Workflow) {
+	if w == nil || w.Name == "default" {
+		return
+	}
+	fmt.Fprintf(out, "--- workflow from sender (untrusted remote text) ---\nName: %s", printable(w.Name))
+	if w.Title != "" {
+		fmt.Fprintf(out, " (%s)", printable(w.Title))
+	}
+	rule := "the chat pauses once both sides report done"
+	if w.DoneRule == "any" {
+		rule = "the chat pauses as soon as either side reports done"
+	}
+	fmt.Fprintf(out, "\nDone rule: %s\nMessage kinds: %s\n", rule, strings.Join(w.Kinds, ", "))
+	if w.PauseNotes != nil {
+		fmt.Fprintf(out, "Closing notes while paused: %d per side\n", *w.PauseNotes)
+	}
+	for _, role := range []string{"host", "guest"} {
+		if r, ok := w.Roles[role]; ok {
+			who := "Sender"
+			if role == "guest" {
+				who = "You"
+			}
+			fmt.Fprintf(out, "%s: %s\n", who, printable(r))
+		}
+	}
+	if w.Instructions != "" {
+		fmt.Fprintf(out, "Instructions:\n%s\n", printable(w.Instructions))
+	}
+	fmt.Fprintln(out, "--- end ---")
+}
+
 func printChatEvent(out io.Writer, e transfer.Event) {
 	switch e.Event {
 	case "opened":
@@ -240,6 +279,9 @@ func printChatEvent(out io.Writer, e transfer.Event) {
 	case "joined":
 		if e.Transcript != "" {
 			fmt.Fprintf(out, "Joined chat %s.\nTranscript: %s\n", e.Chat, e.Transcript)
+			if e.Workflow != nil && e.Workflow.Name != "default" {
+				fmt.Fprintf(out, "Workflow: %s\n", printable(e.Workflow.Name))
+			}
 		} else {
 			fmt.Fprintln(out, "Peer joined the chat.")
 		}

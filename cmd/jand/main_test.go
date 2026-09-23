@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -59,5 +60,33 @@ func TestFileMessagesKeepTheirBytes(t *testing.T) {
 	}
 	if got, _ := readText("", strings.NewReader("stdin\n")); got != "stdin" {
 		t.Fatalf("stdin: %q", got)
+	}
+}
+
+func TestClientConfigPrecedence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("JAND_HOME", home)
+	t.Setenv("JAND_RELAY", "")
+	os.WriteFile(home+"/config.json", []byte(`{"relay":"https://relay.example.com","chat":{"recv_wake":["request"],"default_budget":30}}`), 0600)
+	show := func() map[string]any {
+		var out, stderr bytes.Buffer
+		if got := run(context.Background(), []string{"config"}, &out, &stderr); got != 0 {
+			t.Fatalf("config: %d %s", got, stderr.String())
+		}
+		var v map[string]any
+		json.Unmarshal(out.Bytes(), &v)
+		return v
+	}
+	if v := show(); v["relay"] != "https://relay.example.com" || v["relay_source"] != "config" || v["default_budget"] != float64(30) {
+		t.Fatalf("from config: %v", v)
+	}
+	t.Setenv("JAND_RELAY", "https://env.example.com")
+	if v := show(); v["relay"] != "https://env.example.com" || v["relay_source"] != "JAND_RELAY" {
+		t.Fatalf("env over config: %v", v)
+	}
+	os.WriteFile(home+"/config.json", []byte(`{"rlay":"x"}`), 0600)
+	var out, stderr bytes.Buffer
+	if got := run(context.Background(), []string{"config"}, &out, &stderr); got != 2 || !strings.Contains(stderr.String(), "rlay") {
+		t.Fatalf("typo in config: %d %s", got, stderr.String())
 	}
 }

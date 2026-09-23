@@ -1,0 +1,13 @@
+{
+  "name": "pair-dev",
+  "title": "结对开发：双方各做一部分，都完成后一起验收",
+  "done_rule": "all",
+  "pause_notes": 3,
+  "budget": 60,
+  "kinds": ["note", "progress", "request", "reply", "delivery"],
+  "roles": {
+    "host": "发起方负责的部分（发送前按实际分工改写）",
+    "guest": "接收方负责的部分（发送前按实际分工改写）"
+  },
+  "instructions": "主要时间在各自的部分上干活，不要等消息。后台挂 recv --wait 30m --wake request,reply,delivery。卡住时发 request，然后先做不依赖答复的部分。只写自己负责的范围，需要对方改就发请求。交付写明路径和验证方法；新版本用 --supersedes 标明取代哪一份。自己的部分做完并验证后 chat done，双方都完成后由双方的用户验收。"
+}

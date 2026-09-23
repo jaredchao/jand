@@ -49,6 +49,8 @@ type chatState struct {
 	Role  string `json:"role"` // host or guest
 	Token string `json:"token"`
 	Key   string `json:"key"`
+	// Workflow agreed for this chat; nil in state written before 0.4.1.
+	Workflow *Workflow `json:"workflow,omitempty"`
 }
 
 // MessageKinds are the purposes a message can declare. The kind travels
@@ -141,13 +143,7 @@ type chatCounter struct {
 }
 
 func DefaultStateDir() string {
-	if v := os.Getenv("JAND_HOME"); v != "" {
-		return filepath.Join(v, "chats")
-	}
-	if dir, err := os.UserConfigDir(); err == nil {
-		return filepath.Join(dir, "jand", "chats")
-	}
-	return filepath.Join(".jand", "chats")
+	return filepath.Join(HomeDir(), "chats")
 }
 
 func chatRoomID(c code.Code) string {
@@ -365,9 +361,26 @@ func createChat(ctx context.Context, c code.Code, o Options) (*chatState, error)
 		return nil, err
 	}
 	key := c.Derive("chat/key")
+	w := DefaultWorkflow()
+	if o.Workflow != nil {
+		w = *o.Workflow
+	}
 	s := &chatState{ID: chatRoomID(c), Relay: o.RelayURL, Role: "host", Token: host,
-		Key: base64.RawURLEncoding.EncodeToString(key[:])}
-	resp, err := chatCall(ctx, o.RelayURL, s.ID, "", "", map[string]any{"host": host, "invite": c.Token("chat/invite"), "budget": o.Budget})
+		Key: base64.RawURLEncoding.EncodeToString(key[:]), Workflow: &w}
+	plain, err := json.Marshal(charter{Protocol: charterProtocol, Goal: o.Goal, Budget: o.Budget, Workflow: w})
+	if err != nil {
+		return nil, err
+	}
+	sealed, err := sealChat(key, s.ID, "host", "charter", 0, string(plain))
+	if err != nil {
+		return nil, err
+	}
+	body := map[string]any{"host": host, "invite": c.Token("chat/invite"), "budget": o.Budget,
+		"done_rule": w.DoneRule, "charter": sealed}
+	if w.PauseNotes != nil {
+		body["pause_notes"] = *w.PauseNotes
+	}
+	resp, err := chatCall(ctx, o.RelayURL, s.ID, "", "", body)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +395,66 @@ func createChat(ctx context.Context, c code.Code, o Options) (*chatState, error)
 	if err = writeJSONFile(s.path(o.StateDir, ".json"), s); err != nil {
 		return nil, fmt.Errorf("cannot save chat state: %w", err)
 	}
+	// An older relay ignores the terms it does not know. That is harmless
+	// for the default workflow and wrong for any other, so check.
+	if _, _, err := readCharter(ctx, c, o.RelayURL, host, o.Goal); err != nil {
+		if !errors.Is(err, errNoCharter) || w.Name != "default" {
+			s.abandon(o)
+			if errors.Is(err, errNoCharter) {
+				return nil, fmt.Errorf("workflow %s needs a jand 0.4.1 or later relay; this relay does not support workflows", w.Name)
+			}
+			return nil, err
+		}
+	}
 	return s, nil
+}
+
+// errNoCharter means the relay or the host predates workflows: the chat
+// follows the default workflow.
+var errNoCharter = errors.New("no charter")
+
+// readCharter fetches the host's sealed charter and the terms the relay
+// enforces, and checks that they agree with each other and, when goal is
+// given, with the goal in the packet. Without a charter the chat uses
+// DefaultWorkflow.
+func readCharter(ctx context.Context, c code.Code, relay, token, goal string) (Workflow, relayTerms, error) {
+	var t relayTerms
+	target, err := relayURL(relay, "/v1/chats/"+chatRoomID(c)+"/charter")
+	if err != nil {
+		return Workflow{}, t, err
+	}
+	resp, err := request(ctx, http.MethodGet, target, token, nil)
+	if err != nil {
+		return Workflow{}, t, fmt.Errorf("cannot reach relay: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return DefaultWorkflow(), t, errNoCharter
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&t) != nil {
+		return Workflow{}, t, errors.New("invalid charter response from relay")
+	}
+	if t.Charter == "" {
+		return DefaultWorkflow(), t, nil // a pre-0.4.1 host on a current relay
+	}
+	plain, err := openChat(c.Derive("chat/key"), chatRoomID(c), "host", "charter", 0, t.Charter)
+	if err != nil {
+		return Workflow{}, t, errors.New("charter failed authentication")
+	}
+	var ch charter
+	if json.Unmarshal([]byte(plain), &ch) != nil || ch.Protocol != charterProtocol {
+		return Workflow{}, t, errors.New("unreadable charter")
+	}
+	if err := ch.Workflow.Validate(); err != nil {
+		return Workflow{}, t, err
+	}
+	if goal != "" && ch.Goal != goal {
+		return Workflow{}, t, errors.New("the charter's goal differs from the packet's")
+	}
+	if err := ch.matches(t); err != nil {
+		return Workflow{}, t, err
+	}
+	return ch.Workflow, t, nil
 }
 
 // abandon closes a room whose invitation packet never reached the relay.
@@ -417,6 +489,14 @@ func ChatJoin(ctx context.Context, rawCode string, opts Options) (string, error)
 	}
 	id := chatRoomID(c)
 	statePath := filepath.Join(o.StateDir, id+".json")
+	// Check the charter again at the moment of joining: this is the workflow
+	// the user is agreeing to.
+	// The goal was compared with the packet when it was received; joining
+	// has no packet, so that one comparison is skipped here.
+	w, _, err := readCharter(ctx, c, o.RelayURL, c.Token("chat/invite"), "")
+	if err != nil && !errors.Is(err, errNoCharter) {
+		return "", fmt.Errorf("not joining: %w", err)
+	}
 	var s *chatState
 	if prior, err := loadChat(o.StateDir, id); err == nil {
 		if prior.Role != "guest" {
@@ -439,13 +519,13 @@ func ChatJoin(ctx context.Context, rawCode string, opts Options) (string, error)
 		}
 		key := c.Derive("chat/key")
 		s = &chatState{ID: id, Relay: o.RelayURL, Role: "guest", Token: guest,
-			Key: base64.RawURLEncoding.EncodeToString(key[:])}
+			Key: base64.RawURLEncoding.EncodeToString(key[:]), Workflow: &w}
 		// Saved before the request so the token survives a lost response.
 		if err = writeJSONFile(statePath, s); err != nil {
 			return "", fmt.Errorf("cannot save chat state: %w", err)
 		}
 	}
-	resp, err := chatCall(ctx, s.Relay, s.ID, "join", c.Token("chat/invite"), map[string]string{"guest": s.Token})
+	resp, err := chatCall(ctx, s.Relay, s.ID, "join", c.Token("chat/invite"), map[string]any{"guest": s.Token, "features": []string{"charter"}})
 	if err != nil {
 		return "", err
 	}
@@ -459,7 +539,7 @@ func ChatJoin(ctx context.Context, rawCode string, opts Options) (string, error)
 		return "", chatError(resp)
 	}
 	resp.Body.Close()
-	o.Emit(Event{Event: "joined", Chat: s.ID, Transcript: s.path(o.StateDir, ".transcript.jsonl")})
+	o.Emit(Event{Event: "joined", Chat: s.ID, Transcript: s.path(o.StateDir, ".transcript.jsonl"), Workflow: s.Workflow})
 	return s.ID, nil
 }
 
@@ -537,6 +617,9 @@ func ChatSend(ctx context.Context, id string, m ChatMessage, opts Options) error
 	}
 	if !knownKind(m.Kind) {
 		return fmt.Errorf("unknown message kind %q; use one of %s", m.Kind, strings.Join(MessageKinds, ", "))
+	}
+	if !s.Workflow.allows(m.Kind) {
+		return fmt.Errorf("workflow %s does not allow %s messages; it allows %s", s.Workflow.Name, m.Kind, strings.Join(s.Workflow.Kinds, ", "))
 	}
 	if m.Kind == "reply" && m.ReplyTo == "" {
 		return errors.New("a reply must name the message it answers (--reply-to, e.g. " + s.peer()[:1] + "3)")
@@ -972,7 +1055,7 @@ func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relay
 		out.Event, out.Reason = e.Type, e.Reason
 		if e.Type == "checkpoint" && e.From == "" {
 			// Relay-enforced: the budget is spent, or both sides are done.
-			if e.Reason != "budget" && e.Reason != "all_done" {
+			if e.Reason != "budget" && e.Reason != "all_done" && e.Reason != "any_done" {
 				return fail("unexpected checkpoint event from relay")
 			}
 			out.By = "relay"

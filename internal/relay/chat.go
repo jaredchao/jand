@@ -3,8 +3,10 @@ package relay
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -61,9 +63,14 @@ type chatRoom struct {
 	budget, used        int             // for the current goal
 	done                map[string]bool // parties that reported their share of the goal done
 	pauseNotes          map[string]int  // closing messages sent during the current pause
-	proposal            *chatEvent
-	waiters             int
-	notify              chan struct{}
+	// Terms set by the host's workflow at creation and enforced here. The
+	// charter is the host's sealed copy, which the guest checks them against.
+	doneRule      string // "all" or "any"
+	pauseNotesMax int
+	charter       string
+	proposal      *chatEvent
+	waiters       int
+	notify        chan struct{}
 }
 
 func other(role string) string {
@@ -167,6 +174,8 @@ func (r *Relay) serveChat(w http.ResponseWriter, req *http.Request, path string)
 		r.chatCreate(w, req, room)
 	case req.Method == http.MethodGet && action == "events":
 		r.chatEvents(w, req, room)
+	case req.Method == http.MethodGet && action == "charter":
+		r.chatCharter(w, req, room)
 	case req.Method == http.MethodPost && (action == "opened" || action == "join" || action == "decline"):
 		r.chatInvite(w, req, room, action)
 	case req.Method == http.MethodPost && (action == "messages" || action == "checkpoint" || action == "done" || action == "propose" || action == "accept" || action == "close"):
@@ -195,8 +204,11 @@ func (r *Relay) chatCreate(w http.ResponseWriter, req *http.Request, room string
 	var body struct {
 		Host, Invite string
 		Budget       int
+		DoneRule     string `json:"done_rule"`
+		PauseNotes   *int   `json:"pause_notes"`
+		Charter      string
 	}
-	if !readJSON(w, req, 1024, &body) || !validToken(body.Host) || !validToken(body.Invite) || body.Host == body.Invite {
+	if !readJSON(w, req, maxCharter+1024, &body) || !validToken(body.Host) || !validToken(body.Invite) || body.Host == body.Invite {
 		http.Error(w, "invalid chat", http.StatusBadRequest)
 		return
 	}
@@ -204,7 +216,26 @@ func (r *Relay) chatCreate(w http.ResponseWriter, req *http.Request, room string
 		body.Budget = r.config.ChatDefaultBudget
 	}
 	if !r.validBudget(body.Budget) {
-		http.Error(w, "invalid budget", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("invalid budget; this relay allows 1 to %d", r.config.ChatMaxMessages), http.StatusBadRequest)
+		return
+	}
+	if body.DoneRule == "" {
+		body.DoneRule = "all"
+	}
+	if body.DoneRule != "all" && body.DoneRule != "any" {
+		http.Error(w, "invalid done_rule", http.StatusBadRequest)
+		return
+	}
+	pauseNotes := r.config.ChatPauseNotes
+	if body.PauseNotes != nil {
+		if *body.PauseNotes < 0 || *body.PauseNotes > r.config.ChatPauseNotes {
+			http.Error(w, fmt.Sprintf("pause_notes exceeds this relay's limit of %d", r.config.ChatPauseNotes), http.StatusBadRequest)
+			return
+		}
+		pauseNotes = *body.PauseNotes
+	}
+	if body.Charter != "" && !validCharter(body.Charter) {
+		http.Error(w, "invalid charter", http.StatusBadRequest)
 		return
 	}
 	r.mu.Lock()
@@ -224,9 +255,14 @@ func (r *Relay) chatCreate(w http.ResponseWriter, req *http.Request, room string
 		return
 	}
 	now := time.Now()
-	r.chats[room] = &chatRoom{host: body.Host, invite: body.Invite, state: chatPending, created: now, changed: now,
-		budget: body.Budget, queue: map[string][]chatEvent{}, done: map[string]bool{}, pauseNotes: map[string]int{}, notify: make(chan struct{})}
-	r.log.Info("chat created", "room", tag(room), "budget", body.Budget, "chats", len(r.chats))
+	c := &chatRoom{host: body.Host, invite: body.Invite, state: chatPending, created: now, changed: now,
+		budget: body.Budget, queue: map[string][]chatEvent{}, done: map[string]bool{}, pauseNotes: map[string]int{}, notify: make(chan struct{}),
+		doneRule: body.DoneRule, pauseNotesMax: pauseNotes, charter: body.Charter}
+	r.chats[room] = c
+	c.bytes += int64(len(body.Charter))
+	r.chatBytes += int64(len(body.Charter))
+	r.log.Info("chat created", "room", tag(room), "budget", body.Budget, "done_rule", body.DoneRule,
+		"pause_notes", pauseNotes, "charter", body.Charter != "", "chats", len(r.chats))
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -246,11 +282,15 @@ func (c *chatRoom) role(token string) string {
 }
 
 type chatBody struct {
-	Guest  string
-	Ctr    uint64
-	Data   string
-	Budget int
-	Seq    uint64
+	Guest string
+	// Features the joining client supports; "charter" means it reads the
+	// host's workflow. A room whose rules an older client would misread
+	// refuses clients without it.
+	Features []string
+	Ctr      uint64
+	Data     string
+	Budget   int
+	Seq      uint64
 	// Closing is set by the client for reply and note messages: the only
 	// kinds that may pass a pause. The kind itself is encrypted, so this
 	// relies on honest clients; the count limit does not.
@@ -318,6 +358,10 @@ func (r *Relay) chatInvite(w http.ResponseWriter, req *http.Request, room, actio
 	case "join":
 		if !validToken(body.Guest) || body.Guest == c.host || body.Guest == c.invite {
 			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		if c.doneRule == "any" && !slices.Contains(body.Features, "charter") {
+			http.Error(w, "this chat uses a workflow that needs jand 0.4.1 or later; upgrade before joining", http.StatusConflict)
 			return
 		}
 		c.guest = body.Guest
@@ -394,7 +438,7 @@ func (r *Relay) chatParty(w http.ResponseWriter, req *http.Request, room, action
 				http.Error(w, "chat paused at a checkpoint; only closing replies or notes may be sent until a new goal is accepted", http.StatusConflict)
 				return
 			}
-			if c.pauseNotes[from] >= r.config.ChatPauseNotes {
+			if c.pauseNotes[from] >= c.pauseNotesMax {
 				http.Error(w, "closing message limit reached for this pause", http.StatusConflict)
 				return
 			}
@@ -457,12 +501,16 @@ func (r *Relay) chatParty(w http.ResponseWriter, req *http.Request, room, action
 		c.done[from] = true
 		r.pushLocked(c, peer, chatEvent{Type: "done", From: from, Ctr: body.Ctr, Data: body.Data})
 		c.changed = time.Now()
-		if c.done[peer] {
+		if c.done[peer] || c.doneRule == "any" {
+			reason := "all_done"
+			if !c.done[peer] {
+				reason = "any_done" // one side works, the other accepts
+			}
 			for _, role := range []string{"host", "guest"} {
-				r.pushLocked(c, role, chatEvent{Type: "checkpoint", Reason: "all_done"})
+				r.pushLocked(c, role, chatEvent{Type: "checkpoint", Reason: reason})
 			}
 			c.state = chatPaused
-			r.log.Info("chat checkpoint", "room", tag(room), "reason", "all_done")
+			r.log.Info("chat checkpoint", "room", tag(room), "reason", reason)
 		} else {
 			r.log.Info("chat party done", "room", tag(room), "by", from)
 		}
@@ -493,6 +541,34 @@ func (r *Relay) chatParty(w http.ResponseWriter, req *http.Request, room, action
 		r.log.Info("chat resumed", "room", tag(room), "accepted_by", from, "budget", c.budget)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// maxCharter bounds the sealed charter: workflow instructions (8 KiB), goal
+// and the rest, base64-encoded.
+const maxCharter = 16 * 1024
+
+func validCharter(data string) bool {
+	raw, err := base64.StdEncoding.DecodeString(data)
+	return err == nil && len(raw) >= 29 && len(data) <= maxCharter
+}
+
+// chatCharter returns the host's sealed charter with the terms this relay
+// enforces. The guest reads it with the invite token before joining, so its
+// user can accept the workflow together with the goal; parties may reread it.
+func (r *Relay) chatCharter(w http.ResponseWriter, req *http.Request, room string) {
+	token := bearer(req)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.expireChatsLocked()
+	c := r.chats[room]
+	if c == nil || !validToken(token) || !(c.role(token) != "" || c.invite != "" && equal(token, c.invite)) {
+		http.NotFound(w, req)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any{"charter": c.charter, "done_rule": c.doneRule,
+		"pause_notes": c.pauseNotesMax, "budget": c.budget})
 }
 
 // chatEvents long-polls one party's queue. Events up to `after` are

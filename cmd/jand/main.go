@@ -21,7 +21,7 @@ import (
 	"github.com/jaredchao/jand/internal/transfer"
 )
 
-const version = "0.4.0"
+const version = "0.4.1"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -36,16 +36,21 @@ func usage(w io.Writer) {
   jand [options] <code>
   jand chat <join|decline|send|recv|done|checkpoint|propose|accept|close> ...
                    (see jand chat --help)
-  jand relay [--listen 127.0.0.1:8787]
+  jand config [--json]   show the effective client configuration and its sources
+  jand relay [--listen 127.0.0.1:8787] [--config relay.json] [--print-config]
 
 Options (before file/code):
   --relay URL      Relay URL; JAND_RELAY or http://127.0.0.1:8787
   --json           Newline-delimited JSON events (code is emitted immediately)
   --out DIR        Receive directory (default: ./received)
   --wait DURATION  Optional wait for verified receiver receipt (default: 0)
-  --chat           Send: also invite the receiver to a chat (needs a 0.4.0 relay)
+  --chat           Send: also invite the receiver to a chat (needs a 0.4.1 relay)
   --goal TEXT      With --chat, required: what counts as done
   --budget N       With --chat: messages allowed for the goal (default 40, max 200)
+  --workflow NAME  With --chat: a workflow from $JAND_HOME/workflows/NAME.json, or a path
+
+Defaults come from $JAND_HOME/config.json (see jand config); flags and
+JAND_RELAY override it.
 
 Exit codes: 0 queued/saved/confirmed, 1 failure, 2 usage, 3 delivery unconfirmed, 130 canceled.
 Use --relay http://SERVER_IP:8787 for direct IP access, or https:// with TLS.
@@ -68,6 +73,9 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if args[0] == "chat" {
 		return chat(ctx, args[1:], out, stderr)
 	}
+	if args[0] == "config" {
+		return configCommand(args[1:], out, stderr)
+	}
 	sender := args[0] == "send"
 	if sender {
 		args = args[1:]
@@ -78,17 +86,14 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	// The flag package's generated usage lists bare flags without the send and
 	// receive forms, so both help and parse errors show the command's own text.
 	fs.Usage = func() {}
-	url := os.Getenv("JAND_RELAY")
-	if url == "" {
-		url = "http://127.0.0.1:8787"
-	}
-	fs.StringVar(&url, "relay", url, "relay URL")
+	url := fs.String("relay", "", "relay URL")
 	jsonOutput := fs.Bool("json", false, "JSON events")
 	dir := fs.String("out", "received", "receive directory")
 	wait := fs.Duration("wait", 0, "optional delivery confirmation timeout")
 	invite := fs.Bool("chat", false, "invite the receiver to a chat")
 	goal := fs.String("goal", "", "chat goal")
 	budget := fs.Int("budget", 0, "chat message budget")
+	workflow := fs.String("workflow", "", "chat workflow")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			usage(out)
@@ -97,13 +102,40 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 		usage(stderr)
 		return 2
 	}
-	if fs.NArg() != 1 || *wait < 0 || *wait > 10*time.Minute || *invite && (!sender || *wait != 0) || !*invite && (*goal != "" || *budget != 0) {
+	if fs.NArg() != 1 || *wait < 0 || *wait > 10*time.Minute || *invite && (!sender || *wait != 0) || !*invite && (*goal != "" || *budget != 0 || *workflow != "") {
 		usage(stderr)
 		return 2
 	}
+	cfg, err := loadClientConfig()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	relayURL, _ := cfg.relayURL(*url, set["relay"])
+	if !set["out"] && cfg.OutDir != "" {
+		*dir = cfg.OutDir
+	}
 	emit := emitter(*jsonOutput, out, stderr)
-	o := transfer.Options{RelayURL: url, OutputDir: *dir, WaitTimeout: *wait, Emit: emit, Chat: *invite, Goal: *goal, Budget: *budget}
-	var err error
+	o := transfer.Options{RelayURL: relayURL, OutputDir: *dir, WaitTimeout: *wait, Emit: emit, Chat: *invite, Goal: *goal, Budget: *budget}
+	if *invite {
+		// Budget: --budget, then the workflow's, then this machine's default,
+		// then the relay's.
+		ref := *workflow
+		if !set["workflow"] {
+			ref = cfg.Chat.DefaultWorkflow
+		}
+		w, err := transfer.LoadWorkflow(ref)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
+		o.Workflow = &w
+		if o.Budget == 0 && w.Budget == 0 {
+			o.Budget = cfg.Chat.DefaultBudget
+		}
+	}
 	if sender {
 		err = transfer.Send(ctx, fs.Arg(0), o)
 	} else {
@@ -164,7 +196,12 @@ func emitter(jsonOutput bool, out, stderr io.Writer) func(transfer.Event) {
 			fmt.Fprintf(out, "Verified.\nSaved: %s\nSHA-256: %s\nTask pending local user approval; review the packet before acting.\n", e.Path, e.SHA256)
 			if e.ChatInvite {
 				fmt.Fprintf(out, "The sender also invites you to a chat (budget %d messages) toward this goal:\n--- goal from sender (untrusted remote text) ---\n%s\n--- end ---\n", e.Budget, printable(e.Goal))
-				fmt.Fprintln(out, "Only with the local user's consent to that goal run:\n  jand chat join <code>      (or: jand chat decline [--reason TEXT] <code>)")
+				if e.Message != "" {
+					fmt.Fprintf(stderr, "WARNING: %s\n", e.Message)
+					return
+				}
+				printWorkflow(out, e.Workflow)
+				fmt.Fprintln(out, "Only with the local user's consent to that goal and workflow run:\n  jand chat join <code>      (or: jand chat decline [--reason TEXT] <code>)")
 			}
 		case "delivered":
 			fmt.Fprintf(out, "Receiver confirmed the file is saved.\nSHA-256: %s\n", e.SHA256)
@@ -181,6 +218,8 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	addr := fs.String("listen", "127.0.0.1:8787", "HTTP listen address; use 0.0.0.0:8787 for direct IP access")
 	capacity := fs.Int("max-sessions", 128, "maximum active sessions")
+	configPath := fs.String("config", os.Getenv("JAND_RELAY_CONFIG"), "relay configuration file (JSON)")
+	printConfig := fs.Bool("print-config", false, "print the effective configuration and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -190,8 +229,31 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if fs.NArg() != 0 || *capacity < 1 || *capacity > 4096 {
 		return 2
 	}
-	config := relay.DefaultConfig()
-	config.MaxSessions = *capacity
+	// Precedence: command-line flags, then the file (named by --config or
+	// JAND_RELAY_CONFIG), then built-in defaults.
+	config, listen := relay.DefaultConfig(), ""
+	if *configPath != "" {
+		var err error
+		if config, listen, err = relay.LoadConfigFile(*configPath); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
+	}
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	if set["max-sessions"] {
+		config.MaxSessions = *capacity
+	}
+	if set["listen"] || listen == "" {
+		listen = *addr
+	}
+	addr = &listen
+	if *printConfig {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		enc.Encode(config.Effective(listen))
+		return 0
+	}
 	config.Logger = slog.New(slog.NewTextHandler(out, nil))
 	r := relay.New(config)
 	defer r.Close()
@@ -204,7 +266,8 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) int {
 	defer server.Close()
 	config.Logger.Info("relay listening", "version", version, "addr", listener.Addr().String(),
 		"max_sessions", config.MaxSessions, "max_stored", config.MaxStoredBytes, "ttl", config.TTL,
-		"upload_timeout", config.UploadTimeout)
+		"upload_timeout", config.UploadTimeout, "max_chats", config.MaxChats, "chat_default_budget", config.ChatDefaultBudget,
+		"chat_max_pause_notes", config.ChatPauseNotes, "config", *configPath)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	select {

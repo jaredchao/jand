@@ -80,6 +80,10 @@ type Event struct {
 	SupersededBy string `json:"superseded_by,omitempty"`
 	// AfterPause marks a closing message sent while the chat was paused.
 	AfterPause bool `json:"after_pause,omitempty"`
+	// Workflow is the host's proposed way of working, from the sealed
+	// charter and checked against what the relay enforces. Like the goal it
+	// is a request from the other side: agree to it only with the user.
+	Workflow *Workflow `json:"workflow,omitempty"`
 }
 
 type Options struct {
@@ -91,6 +95,8 @@ type Options struct {
 	Chat   bool
 	Goal   string
 	Budget int
+	// Workflow is the host's chosen workflow; nil means DefaultWorkflow.
+	Workflow *Workflow
 	// StateDir holds local chat state; empty means DefaultStateDir().
 	StateDir string
 }
@@ -247,6 +253,14 @@ func request(ctx context.Context, method, target, token string, body []byte) (*h
 func Send(ctx context.Context, filename string, opts Options) error {
 	o := opts.defaults()
 	if o.Chat {
+		if o.Workflow != nil {
+			if err := o.Workflow.Validate(); err != nil {
+				return err
+			}
+			if o.Budget == 0 {
+				o.Budget = o.Workflow.Budget
+			}
+		}
 		if err := checkGoal(o.Goal, o.Budget); err != nil {
 			return err
 		}
@@ -408,6 +422,21 @@ func Receive(ctx context.Context, rawCode string, opts Options) (string, error) 
 		reportOpened(ctx, c, o)
 		// No chat id here: joining takes the code, and joined returns the id.
 		saved.ChatInvite, saved.Goal, saved.Budget = true, meta.Goal, meta.Budget
+		// The workflow and the budget the relay actually enforces come from
+		// the charter. A charter that fails its checks is reported, not
+		// hidden: the user should not join that chat.
+		w, terms, err := readCharter(ctx, c, o.RelayURL, c.Token("chat/invite"), meta.Goal)
+		switch {
+		case errors.Is(err, errNoCharter):
+			saved.Workflow = &w // a relay from before workflows: the default applies
+		case err != nil:
+			saved.Message = "chat invitation failed its checks, do not join: " + err.Error()
+		default:
+			saved.Workflow = &w
+			if terms.Budget > 0 {
+				saved.Budget = terms.Budget
+			}
+		}
 	}
 	o.Emit(saved)
 	receiptURL, _ := endpoint(o.RelayURL, c.Room(), true)
