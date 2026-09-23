@@ -44,3 +44,24 @@
 - `go.mod` 由 `go 1.26.7` 降为 `go 1.24`（`slog.DiscardHandler` 所需的最低版本）。以 Go 1.24.0 工具链实际运行 `go vet` 与 `go test -race ./...` 通过。
 
 本机以 Go 1.26.7 运行 `go vet ./...`、`go test -count=1 -race ./...` 和 `make smoke` 均通过。编译后的二进制接本机 Relay（`--max-sessions 1`）实测：`send --help` 显示用法；第二次发送报 `relay rejected transfer: HTTP 503: relay full`；无效码领取报一次性提示；`/healthz` 返回 `uptime_seconds`；Relay 日志依次出现 `stored`、`relay full`（附水位）、`claim denied`。服务器上尚未部署本轮版本。
+
+## 0.3.0：Agent 对话
+
+新增 `send --chat` 与 `chat join/decline/send/recv/close`，Relay 新增 `/v1/chats/` 接口，设计见 CHAT_DESIGN.md。`/v1/handoffs/` 线协议不变。
+
+- `go test -race ./...`、`go vet ./...` 通过，覆盖完整对话、拒绝、座位锁定、伪造/重放/篡改消息丢弃、各类超时、长轮询唤醒、等待者上限、消息上限与内存计数归零。
+- `make smoke`：原三进程交接，加 `chat_smoke.py` 真实进程对话；后台 `recv --wait` 在对方发消息后约 0.03 秒退出。
+- `compat_smoke.py` 以 main 上的 0.2.1-dev 构建为旧客户端：旧→旧、旧→新、新→旧、新→新四种组合经 0.3.0 Relay 均收到 `delivered`；新客户端 `--chat` 发给旧接收端时按普通交接保存。
+- 尚未验证：两个真实 Claude Code 会话之间由后台 `recv` 退出唤起 Agent 的完整链路。
+- 兼容测试中发现一个 0.2.x 就存在的问题：约 1/64 的接收码以 `-` 开头，会被命令行当成选项而报错。0.3.0 生成接收码时不再产生这种码，接收端遇到旧版发来的这种码也能正确识别。0.2.x 接收端如果碰到，在码前加 `--` 即可，例如 `jand --relay URL -- '-abc…'`。
+- 两个真实 Claude Code 会话经公网 Relay 对话一轮（5 条消息，发起方 close）：发起方后台 `recv --wait` 依次在 opened、joined 和三条消息到达时退出并唤起 Agent，全程无人工转述。接收方领取前在 auto mode 下被安全分类器拦截（「Code from External」），由用户手动领取后继续。对话中接收方冷读文档，指出「接收码一次性」与「join 仍用该码」自相矛盾等问题。
+
+## 0.3.1：目标与检查点（按上述联测结论修改）
+
+- 对话必须带目标（`--goal`），每个目标有消息预算（`--budget`，默认 40，最大 200）。Agent 判断达成时 `chat checkpoint`；预算用完时 Relay 强制检查点。暂停期间不转发消息，需一方 `propose`、另一方 `accept` 才恢复，双方各自征得用户同意。任一方仍可随时 close。
+- join 可安全重试：同一邀请令牌加已锁定的 guest 令牌再 join 返回成功；客户端只在 400/404/409/410 时删除本地状态，网关 5xx 时保留。
+- 接收方 `saved` 事件不再带对话 ID，改带 `goal` 与 `budget`；join 误传 chat ID 时直接提示需要接收码。
+- 修复重写中引入、被测试发现的问题：对方加入前 Relay 曾接受发起方的消息。
+- AGENT.md 修正「一次性」表述，补充带邀请的 `saved` 示例、目标写法、检查点规则与宿主权限说明。
+- 目标放在包头元数据内，受 0.2.x 的 2048 字节上限约束（目标限 1 KiB），因此旧接收端仍能按普通交接保存。
+- `go test -race`、`go vet`、`make smoke`（含检查点流程）、`compat_smoke.py` 通过。

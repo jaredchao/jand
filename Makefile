@@ -11,6 +11,7 @@ check: test
 
 smoke: build
 	python3 scripts/smoke.py
+	python3 scripts/chat_smoke.py
 
 .PHONY: release
 release:

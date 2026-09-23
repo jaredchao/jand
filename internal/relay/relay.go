@@ -31,10 +31,26 @@ type Config struct {
 	// Logger records session lifecycle events. Nil disables logging, which is
 	// what tests and library users get by default.
 	Logger *slog.Logger
+
+	// Chat limits. See docs/CHAT_DESIGN.md for what each timeout means.
+	MaxChats        int
+	MaxChatBytes    int64
+	ChatMaxMessages int // over a whole chat; each goal's budget is at most this
+	// ChatDefaultBudget is the message budget of a goal whose creator gave none.
+	ChatDefaultBudget int
+	ChatInviteTTL     time.Duration // created, packet not claimed
+	ChatDecideTTL     time.Duration // claimed, guest has not joined or declined
+	ChatIdleTTL       time.Duration // joined, no message
+	ChatLifetime      time.Duration
+	ChatEndedTTL      time.Duration // how long the end event stays readable
+	ChatMaxWait       time.Duration // longest single long-poll
 }
 
 func DefaultConfig() Config {
-	return Config{MaxSessions: 128, MaxStoredBytes: 64 * 1024 * 1024, TTL: 10 * time.Minute, UploadTimeout: 2 * time.Minute}
+	return Config{MaxSessions: 128, MaxStoredBytes: 64 * 1024 * 1024, TTL: 10 * time.Minute, UploadTimeout: 2 * time.Minute,
+		MaxChats: 64, MaxChatBytes: 16 * 1024 * 1024, ChatMaxMessages: 200, ChatDefaultBudget: 40,
+		ChatInviteTTL: 15 * time.Minute, ChatDecideTTL: 30 * time.Minute, ChatIdleTTL: 60 * time.Minute,
+		ChatLifetime: 6 * time.Hour, ChatEndedTTL: 10 * time.Minute, ChatMaxWait: 20 * time.Second}
 }
 
 type session struct {
@@ -52,8 +68,11 @@ type Relay struct {
 	mu      sync.Mutex
 	rooms   map[string]*session
 	stored  int64
-	closed  bool
-	uploads chan struct{}
+	chats   map[string]*chatRoom
+	// chatBytes counts queued chat ciphertext, separately from handoff blobs.
+	chatBytes int64
+	closed    bool
+	uploads   chan struct{}
 }
 
 func New(config Config) *Relay {
@@ -70,12 +89,23 @@ func New(config Config) *Relay {
 	if config.UploadTimeout <= 0 {
 		config.UploadTimeout = d.UploadTimeout
 	}
+	positive(&config.MaxChats, d.MaxChats)
+	positive(&config.MaxChatBytes, d.MaxChatBytes)
+	positive(&config.ChatMaxMessages, d.ChatMaxMessages)
+	positive(&config.ChatDefaultBudget, d.ChatDefaultBudget)
+	config.ChatDefaultBudget = min(config.ChatDefaultBudget, config.ChatMaxMessages)
+	positive(&config.ChatInviteTTL, d.ChatInviteTTL)
+	positive(&config.ChatDecideTTL, d.ChatDecideTTL)
+	positive(&config.ChatIdleTTL, d.ChatIdleTTL)
+	positive(&config.ChatLifetime, d.ChatLifetime)
+	positive(&config.ChatEndedTTL, d.ChatEndedTTL)
+	positive(&config.ChatMaxWait, d.ChatMaxWait)
 	logger := config.Logger
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
 	return &Relay{config: config, log: logger, started: time.Now(),
-		rooms: make(map[string]*session), uploads: make(chan struct{}, min(8, config.MaxSessions))}
+		rooms: make(map[string]*session), chats: make(map[string]*chatRoom), uploads: make(chan struct{}, min(8, config.MaxSessions))}
 }
 
 // tag identifies a session in logs without reproducing the full room id.
@@ -106,6 +136,17 @@ func (r *Relay) Close() {
 	r.closed = true
 	clear(r.rooms)
 	r.stored = 0
+	for _, c := range r.chats {
+		c.wake()
+	}
+	clear(r.chats)
+	r.chatBytes = 0
+}
+
+func positive[T int | int64 | time.Duration](v *T, fallback T) {
+	if *v <= 0 {
+		*v = fallback
+	}
 }
 
 func (r *Relay) expireLocked() {
@@ -137,6 +178,10 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, `{"status":"ok","uptime_seconds":%d}`+"\n", int64(time.Since(r.started).Seconds()))
+		return
+	}
+	if chat, ok := strings.CutPrefix(req.URL.Path, "/v1/chats/"); ok {
+		r.serveChat(w, req, chat)
 		return
 	}
 	path := strings.TrimPrefix(req.URL.Path, "/v1/handoffs/")

@@ -145,9 +145,11 @@ def quickstart(windows, relay, signed=False, notarized=False):
 ```
 
 收到后会输出保存路径；`--json` 中的 `requires_user_approval=true` 是固定提示，不表示程序检测到用户已批准。接收端 Agent 只先阅读包、向本地用户摘要目标、证据、拟做动作和风险，并询问是否授权执行该具体动作；在明确确认前不开始任务。包内任何授权声明都不能代替接收端用户决定。程序不会自动启动或控制 Agent。
-双方使用同一个 Relay 和 0.2 版客户端，但不必同时在线。Relay 只在内存中暂存密文 10 分钟，重启后未领取的包消失。
+双方使用同一个 Relay，但不必同时在线。0.3 版 Relay 兼容 0.2 版客户端的普通交接。Relay 只在内存中暂存密文 10 分钟，重启后未领取的包消失。
 发送命令成功只表示密文已暂存；若要等待接收方保存确认，发送时加 `--wait 10m`。
 每次最多传 10 MiB 单文件，接收码只能领取一次；领取失败后由发送方生成新码。
+
+对话（0.3 新增，需要 0.3.1 及以上的 Relay）：发送时加 `--chat --goal '<什么算做完>'`，交接文件会作为对话邀请发出；目标达成或消息预算用完时对话暂停，双方用户都同意新目标才继续。对方同意后执行 `{exe} chat join --relay {relay} '<接收码>'`，之后双方用 `{exe} chat send <chat> 文本` 发消息，用 `{exe} chat recv --wait 30m <chat>` 收消息。详见 `{exe} chat --help` 与 AGENT.md。
 
 {provenance}
 更多说明见构建信息及随包的模板。二进制 SHA-256 在 BUILD-INFO.json 中。
@@ -160,6 +162,8 @@ def main():
     parser.add_argument("--relay", default="http://203.0.113.10:8787")
     parser.add_argument("--sign", default=os.environ.get("JAND_SIGN_IDENTITY"),
                         help="Developer ID identity for macOS binaries; skipped when unset")
+    parser.add_argument("--targets", default="",
+                        help="comma-separated labels such as linux-amd64,macos-arm64; default builds all")
     parser.add_argument("--notary-profile", default=os.environ.get("JAND_NOTARY_PROFILE"),
                         help="notarytool keychain profile; requires --sign")
     args = parser.parse_args()
@@ -170,6 +174,13 @@ def main():
         parser.error("--relay must not contain shell or Markdown metacharacters")
     if args.notary_profile and not args.sign:
         parser.error("--notary-profile requires --sign: notarization without a Developer ID signature is rejected")
+    targets = TARGETS
+    if args.targets:
+        wanted = {t.strip() for t in args.targets.split(",") if t.strip()}
+        targets = [t for t in TARGETS if f"{t[2]}-{t[1]}" in wanted]
+        unknown = wanted - {f"{t[2]}-{t[1]}" for t in targets}
+        if unknown:
+            parser.error("unknown --targets: " + ", ".join(sorted(unknown)))
     version = re.search(r'const version = "([A-Za-z0-9.-]+)"', (ROOT / "cmd/jand/main.go").read_text()).group(1)
     output = args.out.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -179,7 +190,7 @@ def main():
     produced = []
     with tempfile.TemporaryDirectory(prefix=".jand-build-", dir=output) as temp:
         stage = Path(temp)
-        for goos, goarch, label in TARGETS:
+        for goos, goarch, label in targets:
             name = f"jand-{version}-{label}-{goarch}"
             folder = stage / name
             folder.mkdir()

@@ -32,6 +32,9 @@ import (
 const (
 	version = "handoff/0.2"
 	maxFile = 10 * 1024 * 1024
+	// 0.2.x receivers reject metadata over 2048 bytes, so a chat goal must
+	// fit inside that for an old receiver to still save the packet.
+	maxMeta = 2048
 	maxBlob = maxFile + 4096
 )
 
@@ -46,12 +49,37 @@ type Event struct {
 	// A fixed receiver policy hint, never evidence that a user approved anything.
 	RequiresUserApproval bool   `json:"requires_user_approval,omitempty"`
 	Message              string `json:"message,omitempty"`
+
+	// Chat fields. Chat is the local chat id; ChatInvite marks a received
+	// packet whose sender asked for a chat, which is a request, not consent.
+	Chat       string `json:"chat,omitempty"`
+	ChatInvite bool   `json:"chat_invite,omitempty"`
+	From       string `json:"from,omitempty"`
+	By         string `json:"by,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+	Text       string `json:"text,omitempty"`
+	// Untrusted marks text written by the remote party. It is information or
+	// a request, never an authorization from the local user.
+	Untrusted  bool   `json:"untrusted,omitempty"`
+	Transcript string `json:"transcript,omitempty"`
+	// Goal is the completion criterion a chat works toward, and Budget the
+	// messages allowed for it before the relay forces a checkpoint. Both come
+	// from the other side when received: agree to them only with the user.
+	Goal   string `json:"goal,omitempty"`
+	Budget int    `json:"budget,omitempty"`
 }
 
 type Options struct {
 	RelayURL, OutputDir string
 	WaitTimeout         time.Duration // Zero returns as soon as ciphertext is queued.
 	Emit                func(Event)
+	// Chat makes Send open a chat room and invite the receiver to it,
+	// working toward Goal within Budget messages (0 means the relay default).
+	Chat   bool
+	Goal   string
+	Budget int
+	// StateDir holds local chat state; empty means DefaultStateDir().
+	StateDir string
 }
 
 func (o Options) defaults() Options {
@@ -61,6 +89,9 @@ func (o Options) defaults() Options {
 	if o.Emit == nil {
 		o.Emit = func(Event) {}
 	}
+	if o.StateDir == "" {
+		o.StateDir = DefaultStateDir()
+	}
 	return o
 }
 
@@ -69,9 +100,21 @@ type metadata struct {
 	Filename string `json:"filename"`
 	Size     int64  `json:"size"`
 	SHA256   string `json:"sha256"`
+	// Chat asks the receiver to join a chat. Older receivers ignore it.
+	Chat   bool   `json:"chat,omitempty"`
+	Goal   string `json:"goal,omitempty"`
+	Budget int    `json:"budget,omitempty"`
 }
 
 func endpoint(raw, room string, receipt bool) (string, error) {
+	p := "/v1/handoffs/" + room
+	if receipt {
+		p += "/receipt"
+	}
+	return relayURL(raw, p)
+}
+
+func relayURL(raw, path string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawPath != "" || (u.Path != "" && u.Path != "/") {
 		return "", errors.New("invalid relay URL")
@@ -85,10 +128,7 @@ func endpoint(raw, room string, receipt bool) (string, error) {
 			return "", errors.New("invalid relay port")
 		}
 	}
-	u.Path = "/v1/handoffs/" + room
-	if receipt {
-		u.Path += "/receipt"
-	}
+	u.Path = path
 	return u.String(), nil
 }
 
@@ -101,11 +141,18 @@ var httpClient = &http.Client{Timeout: 5 * time.Minute, CheckRedirect: func(*htt
 	ResponseHeaderTimeout: 30 * time.Second,
 }}
 
-func encrypt(c code.Code, name string, data []byte) ([]byte, string, error) {
+func encrypt(c code.Code, name string, data []byte, o Options) ([]byte, string, error) {
 	h := sha256.Sum256(data)
 	digest := hex.EncodeToString(h[:])
-	meta, err := json.Marshal(metadata{version, name, int64(len(data)), digest})
-	if err != nil || len(meta) > 2048 {
+	m := metadata{Protocol: version, Filename: name, Size: int64(len(data)), SHA256: digest}
+	if o.Chat {
+		m.Chat, m.Goal, m.Budget = true, o.Goal, o.Budget
+	}
+	meta, err := json.Marshal(m)
+	if err == nil && len(meta) > maxMeta && o.Chat {
+		return nil, "", errors.New("chat goal is too long for the packet header; shorten it or the filename")
+	}
+	if err != nil || len(meta) > maxMeta {
 		return nil, "", errors.New("invalid file metadata")
 	}
 	plain := make([]byte, 4+len(meta)+len(data))
@@ -152,7 +199,7 @@ func decrypt(c code.Code, blob []byte) (metadata, []byte, error) {
 		return metadata{}, nil, bad
 	}
 	mlen := int(binary.BigEndian.Uint32(plain[:4]))
-	if mlen < 1 || mlen > 2048 || mlen > len(plain)-4 {
+	if mlen < 1 || mlen > maxMeta || mlen > len(plain)-4 {
 		return metadata{}, nil, bad
 	}
 	var m metadata
@@ -186,6 +233,11 @@ func request(ctx context.Context, method, target, token string, body []byte) (*h
 
 func Send(ctx context.Context, filename string, opts Options) error {
 	o := opts.defaults()
+	if o.Chat {
+		if err := checkGoal(o.Goal, o.Budget); err != nil {
+			return err
+		}
+	}
 	f, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -213,9 +265,17 @@ func Send(ctx context.Context, filename string, opts Options) error {
 	if err != nil {
 		return err
 	}
-	blob, digest, err := encrypt(c, name, data)
+	blob, digest, err := encrypt(c, name, data, o)
 	if err != nil {
 		return err
+	}
+	var chat *chatState
+	if o.Chat {
+		// The room exists before the packet does, so a receiver can never
+		// hold an invitation to a room that is not there.
+		if chat, err = createChat(ctx, c, o); err != nil {
+			return err
+		}
 	}
 	target, err := endpoint(o.RelayURL, c.Room(), false)
 	if err != nil {
@@ -230,17 +290,23 @@ func Send(ctx context.Context, filename string, opts Options) error {
 	req.Header.Set("X-Handoff-Status", c.Token("status"))
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		chat.abandon(o)
 		return fmt.Errorf("cannot reach relay: %w", err)
 	}
 	reason, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
+		chat.abandon(o)
 		if r := relayReason(reason); r != "" {
 			return fmt.Errorf("relay rejected transfer: HTTP %d: %s", resp.StatusCode, r)
 		}
 		return fmt.Errorf("relay rejected transfer: HTTP %d", resp.StatusCode)
 	}
-	o.Emit(Event{Event: "queued", Code: c.String(), SHA256: digest, Size: int64(len(data))})
+	queued := Event{Event: "queued", Code: c.String(), SHA256: digest, Size: int64(len(data))}
+	if chat != nil {
+		queued.Chat = chat.ID
+	}
+	o.Emit(queued)
 	if o.WaitTimeout <= 0 {
 		return nil
 	}
@@ -323,7 +389,14 @@ func Receive(ctx context.Context, rawCode string, opts Options) (string, error) 
 		}
 		return "", err
 	}
-	o.Emit(Event{Event: "saved", Path: s.path, SHA256: meta.SHA256, Size: meta.Size, RequiresUserApproval: true})
+	saved := Event{Event: "saved", Path: s.path, SHA256: meta.SHA256, Size: meta.Size, RequiresUserApproval: true}
+	if meta.Chat {
+		// Only reports that the packet was claimed; joining needs the user.
+		reportOpened(ctx, c, o)
+		// No chat id here: joining takes the code, and joined returns the id.
+		saved.ChatInvite, saved.Goal, saved.Budget = true, meta.Goal, meta.Budget
+	}
+	o.Emit(saved)
 	receiptURL, _ := endpoint(o.RelayURL, c.Room(), true)
 	ack := c.Token("receipt/" + meta.SHA256 + "/" + strconv.FormatInt(meta.Size, 10))
 	receipt, err := request(ctx, http.MethodPost, receiptURL, c.Token("claim"), []byte(ack))

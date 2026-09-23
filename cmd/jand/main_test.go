@@ -25,3 +25,15 @@ func TestSendHelpShowsCommandUsage(t *testing.T) {
 		t.Fatalf("unknown flag: stderr=%q", stderr.String())
 	}
 }
+
+func TestDashLeadingCodeIsNotAFlag(t *testing.T) {
+	c := "-aE2VPs842phkNkt3--SBcrnzJHW0xymj1HhNbqvaPI"
+	got := protectCodes([]string{"--json", "--relay", "http://x", c})
+	if strings.Join(got, " ") != "--json --relay http://x -- "+c {
+		t.Fatalf("%q", got)
+	}
+	// An unknown flag that is not a code stays a usage error.
+	if got := protectCodes([]string{"--bogus"}); len(got) != 1 {
+		t.Fatalf("%q", got)
+	}
+}

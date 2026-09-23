@@ -1,6 +1,9 @@
 package code
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCodeIsCanonicalAndSeparated(t *testing.T) {
 	a, err := New()
@@ -24,6 +27,15 @@ func TestCodeIsCanonicalAndSeparated(t *testing.T) {
 	for _, bad := range []string{"", a.String() + "=", a.String() + "!", "amber-river"} {
 		if _, err := Parse(bad); err == nil {
 			t.Fatalf("accepted %q", bad)
+		}
+	}
+}
+
+func TestNewNeverStartsWithDash(t *testing.T) {
+	for range 2000 {
+		c, err := New()
+		if err != nil || strings.HasPrefix(c.String(), "-") {
+			t.Fatalf("%q %v", c.String(), err)
 		}
 	}
 }

@@ -133,7 +133,7 @@ func TestWrongCodeDoesNotConsumeAndExpiry(t *testing.T) {
 func TestCiphertextTamperAndOneClaim(t *testing.T) {
 	_, s := server(t, relay.DefaultConfig())
 	c, _ := code.New()
-	blob, _, err := encrypt(c, "file.md", []byte("secret"))
+	blob, _, err := encrypt(c, "file.md", []byte("secret"), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestCiphertextTamperAndOneClaim(t *testing.T) {
 func TestRelayBlobContainsNoPrivateFields(t *testing.T) {
 	c, _ := code.New()
 	content := []byte("PRIVATE_HANDOFF_CONTEXT_8375829")
-	blob, _, err := encrypt(c, "private-task.md", content)
+	blob, _, err := encrypt(c, "private-task.md", content, Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

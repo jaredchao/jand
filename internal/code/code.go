@@ -14,10 +14,18 @@ import (
 
 type Code struct{ secret [32]byte }
 
+// New never returns a code whose text starts with '-': command-line parsers
+// would read it as an option. That rejects 1 in 64 draws and costs 6 bits.
 func New() (Code, error) {
 	var c Code
-	_, err := rand.Read(c.secret[:])
-	return c, err
+	for {
+		if _, err := rand.Read(c.secret[:]); err != nil {
+			return c, err
+		}
+		if !strings.HasPrefix(c.String(), "-") {
+			return c, nil
+		}
+	}
 }
 
 func (c Code) String() string { return base64.RawURLEncoding.EncodeToString(c.secret[:]) }
