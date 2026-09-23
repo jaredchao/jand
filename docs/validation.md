@@ -32,3 +32,15 @@
 用户转来 Claude 的返回接收码。本机 jand 将 Claude 回执保存在本地忽略目录 `received/claude-return/`：`saved` 事件给出 SHA-256 `0b6a636148050326c2f9b0371ac73c9a79c788a8cf93fd0763ecb27433df8710`、2174 字节和 `requires_user_approval=true`，落盘文件的 SHA-256 与之相同。回执文件自述 Claude 所收包的 SHA-256、大小与发送端源文件一致，并自述先向本地用户征得同意后才写回执；用户随后确认 Claude 确实先摘要并询问，获明确同意后才创建文件。Codex 未独立读取 Claude 会话，人工确认顺序以用户验收为准。
 
 本机另用原发送码派生状态令牌查询 Relay 回执，HTTP 200，回执与按源文件 SHA-256、大小派生的预期令牌常量时间比较相等。这证明接收端提交了匹配的保存回执；它仍不等于发送端 CLI 曾输出 `delivered`。回执指出 `requires_user_approval=true` 为固定策略提示、不是运行时批准检测；已在源码注释、README、HTTP 设计和包内 QUICKSTART 中写明。
+
+## 联测前加固（2026-09-23）
+
+本轮修改 Relay 与客户端的可观测性和失败提示，线协议不变，已发布的 v0.2.0-dev 客户端可继续连接新 Relay。
+
+- 过期日志：此前会话由 TTL 定时器删除时不写日志，`session expired` 只在后续请求顺带清理时才可能出现。探针以 50ms TTL 上传后不再发请求，日志只有 `stored`；修复后新增测试确认该行出现。
+- 上传超时：此前 Go 服务只限制请求头读取时间，慢速上传可长期占用 8 个上传名额。现在每个上传体限时 2 分钟，超时返回 408 并关闭连接。首版实现在超时后清除了读截止时间，服务器随后试图读完剩余请求体而一直阻塞，408 发不出去；测试暴露后改为只在完整读取后清除。新增测试以单名额 Relay 和一个只发半截请求体的连接，确认名额先被占住、超时后收到 408、名额随即释放。
+- 失败提示：发送端被拒时附带 Relay 返回的原因（如 `HTTP 503: relay full`）；领取失败提示码为一次性，下载中途断开时说明码已作废。
+- `jand send --help` 与 `-h` 输出本程序用法并以 0 退出；未知参数输出用法并以 2 退出。
+- `go.mod` 由 `go 1.26.7` 降为 `go 1.24`（`slog.DiscardHandler` 所需的最低版本）。以 Go 1.24.0 工具链实际运行 `go vet` 与 `go test -race ./...` 通过。
+
+本机以 Go 1.26.7 运行 `go vet ./...`、`go test -count=1 -race ./...` 和 `make smoke` 均通过。编译后的二进制接本机 Relay（`--max-sessions 1`）实测：`send --help` 显示用法；第二次发送报 `relay rejected transfer: HTTP 503: relay full`；无效码领取报一次性提示；`/healthz` 返回 `uptime_seconds`；Relay 日志依次出现 `stored`、`relay full`（附水位）、`claim denied`。服务器上尚未部署本轮版本。

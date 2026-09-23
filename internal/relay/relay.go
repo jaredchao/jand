@@ -5,10 +5,12 @@ package relay
 import (
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,13 +25,16 @@ type Config struct {
 	MaxSessions    int
 	MaxStoredBytes int64
 	TTL            time.Duration
+	// UploadTimeout bounds how long one upload may take to deliver its body.
+	// Without it a client trickling bytes holds an upload slot indefinitely.
+	UploadTimeout time.Duration
 	// Logger records session lifecycle events. Nil disables logging, which is
 	// what tests and library users get by default.
 	Logger *slog.Logger
 }
 
 func DefaultConfig() Config {
-	return Config{MaxSessions: 128, MaxStoredBytes: 64 * 1024 * 1024, TTL: 10 * time.Minute}
+	return Config{MaxSessions: 128, MaxStoredBytes: 64 * 1024 * 1024, TTL: 10 * time.Minute, UploadTimeout: 2 * time.Minute}
 }
 
 type session struct {
@@ -61,6 +66,9 @@ func New(config Config) *Relay {
 	}
 	if config.TTL <= 0 {
 		config.TTL = d.TTL
+	}
+	if config.UploadTimeout <= 0 {
+		config.UploadTimeout = d.UploadTimeout
 	}
 	logger := config.Logger
 	if logger == nil {
@@ -173,7 +181,23 @@ func (r *Relay) put(w http.ResponseWriter, req *http.Request, room string) {
 		http.Error(w, "invalid transfer", http.StatusBadRequest)
 		return
 	}
+	// The deadline covers the whole body, not the gap between reads, so a slow
+	// sender cannot keep one of the few upload slots. It is cleared only after
+	// a complete read: on failure the server would otherwise try to drain the
+	// unread body with no deadline and never send the error response.
+	rc := http.NewResponseController(w)
+	rc.SetReadDeadline(time.Now().Add(r.config.UploadTimeout))
 	body, err := io.ReadAll(http.MaxBytesReader(w, req.Body, MaxBlob))
+	if err == nil {
+		rc.SetReadDeadline(time.Time{})
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		r.log.Warn("upload rejected", "room", tag(room), "reason", "upload timed out",
+			"bytes", len(body), "timeout", r.config.UploadTimeout)
+		w.Header().Set("Connection", "close")
+		http.Error(w, "upload timed out", http.StatusRequestTimeout)
+		return
+	}
 	if err != nil || len(body) < 29 {
 		r.log.Warn("upload rejected", "room", tag(room), "reason", "invalid or oversized body", "bytes", len(body))
 		http.Error(w, "invalid or oversized transfer", http.StatusBadRequest)
@@ -208,6 +232,7 @@ func (r *Relay) put(w http.ResponseWriter, req *http.Request, room string) {
 		if r.rooms[room] == s {
 			r.stored -= int64(len(s.blob))
 			delete(r.rooms, room)
+			r.log.Info("session expired", "room", tag(room), "bytes", len(s.blob), "claimed", s.claimed)
 		}
 	})
 	active, stored := r.levelsLocked()

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -253,5 +254,36 @@ func TestBounds(t *testing.T) {
 	}
 	if _, err := endpoint("ws://example.com", "abc", false); err == nil {
 		t.Fatal("websocket URL accepted")
+	}
+}
+
+func TestRejectionCarriesRelayReason(t *testing.T) {
+	cfg := relay.DefaultConfig()
+	cfg.MaxSessions = 1
+	_, s := server(t, cfg)
+	ctx := context.Background()
+	if err := Send(ctx, fixture(t, []byte("first")), Options{RelayURL: s.URL}); err != nil {
+		t.Fatal(err)
+	}
+	err := Send(ctx, fixture(t, []byte("second")), Options{RelayURL: s.URL})
+	if err == nil || err.Error() != "relay rejected transfer: HTTP 503: relay full" {
+		t.Fatalf("err=%v", err)
+	}
+	if got := relayReason([]byte("busy\x1b[31m\r\nnow")); got != "busy [31m now" {
+		t.Fatalf("control characters kept: %q", got)
+	}
+}
+
+func TestInterruptedDownloadSaysCodeIsUsed(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("short"))
+	}))
+	defer s.Close()
+	c, _ := code.New()
+	_, err := Receive(context.Background(), c.String(), Options{RelayURL: s.URL, OutputDir: t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "ask the sender to send again") {
+		t.Fatalf("err=%v", err)
 	}
 }

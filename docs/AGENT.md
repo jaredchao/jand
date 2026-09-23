@@ -60,6 +60,12 @@ __JAND__ send --json --relay __RELAY_URL__ --wait 10m <file>
 
 它出现，意味着接收端**独立算出的** SHA-256 与大小同你的源文件完全一致，且对方持有接收码。哈希不一致就不会有这个事件。
 
+发送在 `queued` 之前失败时，退出码 **1**，`--json` 下输出 `{"event":"error","message":"..."}`。此时 Relay 没有暂存任何东西，也没有产生接收码，重试是安全的。Relay 拒绝上传时，message 会带上原因：
+
+- `relay rejected transfer: HTTP 503: relay busy` 或 `relay full`：Relay 暂时满载，稍等片刻再发。
+- `relay rejected transfer: HTTP 408: upload timed out`：网络太慢，2 分钟内没传完。
+- `cannot reach relay: ...`：地址错误或网络不通，先向用户核对 Relay 地址。
+
 包内可附 `jand-template.md` 所示结构的交接文件，便于接收端解析。
 
 ## 接收
@@ -76,6 +82,11 @@ __JAND__ --json --relay __RELAY_URL__ --out <dir> '<code>'
 - **绝不覆盖已有文件**：提交用原子链接，目标已存在则直接失败。
 - 远端文件名经过校验，不能包含路径分隔符、控制字符或平台保留名。
 - 未指定 `--out` 时默认写入当前目录下的 `received`。
+
+领取失败时退出码 **1**，message 说明原因：
+
+- `transfer unavailable, expired or already claimed ...`：码已过期、已被领取，或码本身有误。Relay 故意不区分这几种情况。**不要用同一个码反复重试**，请用户让发送方重新发送。
+- `download interrupted; this code is now used ...`：Relay 已交出密文，但下载中途断开。这个码已经作废，同样需要发送方重新发送。
 
 ## 退出码
 

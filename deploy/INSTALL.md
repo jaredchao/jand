@@ -35,7 +35,7 @@ sudo supervisorctl status jand-relay
 curl -fsS http://127.0.0.1:8787/healthz
 ```
 
-Relay 的运行日志写入 Supervisor 配置中的 `stdout_logfile`（示例为 `/var/log/jand-relay.log`）：启动一行，其后每次上传、领取、回执与过期各一行，被拒绝的请求记 WARN 并注明原因。日志只含会话短标识与字节数，不含接收码、令牌或文件内容。没有流量时不产生日志，此时用 `curl -s http://127.0.0.1:8787/healthz` 确认进程存活，它返回 `{"status":"ok","uptime_seconds":N}`。
+Relay 的运行日志写入 Supervisor 配置中的 `stdout_logfile`（示例为 `/var/log/jand-relay.log`）：启动一行，其后每次上传、领取、回执与过期各一行，被拒绝的请求记 WARN 并注明原因（`busy`、`malformed tokens`、`upload timed out`、`invalid or oversized body`、`code collision`、`relay full`；`relay full` 一行附带当前与上限的会话数和字节数）。启动行会列出版本与 `max_sessions`、`max_stored`、`ttl`、`upload_timeout`，可据此确认替换后的程序已生效。日志只含会话短标识与字节数，不含接收码、令牌或文件内容。没有流量时不产生日志，此时用 `curl -s http://127.0.0.1:8787/healthz` 确认进程存活，它返回 `{"status":"ok","uptime_seconds":N}`。
 
 示例 `autostart=false`，因此 `update` 后仍由管理员明确 `start`。若 8787 已被旧 Relay 占用，先查明旧进程和未完成会话；不要同时启动两个 Relay。`supervisorctl status` 和本机健康检查分别证明 Supervisor 进程状态与本机 HTTP 响应，不能证明公网入口或文件交付。
 

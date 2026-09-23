@@ -4,7 +4,7 @@ jand 将一份任务交接文件从一个 Agent 所在机器发送给另一台�
 
 ## 构建与本机试用
 
-需要 Go 1.26.7 构建；编译后的程序不需要 Go。程序名为 `jand`。
+需要 Go 1.24 或更高版本构建；编译后的程序不需要 Go。程序名为 `jand`。
 
 ```bash
 go build -o bin/jand ./cmd/jand

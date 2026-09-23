@@ -22,7 +22,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/jaredchao/jand/internal/code"
 )
@@ -36,11 +38,11 @@ const (
 var ErrUnconfirmed = errors.New("delivery unconfirmed: the receiver may have saved the file")
 
 type Event struct {
-	Event                string `json:"event"`
-	Code                 string `json:"code,omitempty"`
-	Path                 string `json:"path,omitempty"`
-	SHA256               string `json:"sha256,omitempty"`
-	Size                 int64  `json:"size,omitempty"`
+	Event  string `json:"event"`
+	Code   string `json:"code,omitempty"`
+	Path   string `json:"path,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
+	Size   int64  `json:"size,omitempty"`
 	// A fixed receiver policy hint, never evidence that a user approved anything.
 	RequiresUserApproval bool   `json:"requires_user_approval,omitempty"`
 	Message              string `json:"message,omitempty"`
@@ -230,9 +232,12 @@ func Send(ctx context.Context, filename string, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("cannot reach relay: %w", err)
 	}
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
+	reason, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
+		if r := relayReason(reason); r != "" {
+			return fmt.Errorf("relay rejected transfer: HTTP %d: %s", resp.StatusCode, r)
+		}
 		return fmt.Errorf("relay rejected transfer: HTTP %d", resp.StatusCode)
 	}
 	o.Emit(Event{Event: "queued", Code: c.String(), SHA256: digest, Size: int64(len(data))})
@@ -289,11 +294,15 @@ func Receive(ctx context.Context, rawCode string, opts Options) (string, error) 
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return "", errors.New("transfer unavailable, expired or already claimed")
+		return "", errors.New("transfer unavailable, expired or already claimed (codes are single-use; ask the sender to send again)")
 	}
 	blob, err := io.ReadAll(io.LimitReader(resp.Body, maxBlob+1))
 	resp.Body.Close()
-	if err != nil || len(blob) > maxBlob {
+	if err != nil {
+		// The relay released the ciphertext when it answered the claim.
+		return "", fmt.Errorf("download interrupted; this code is now used, ask the sender to send again: %w", err)
+	}
+	if len(blob) > maxBlob {
 		return "", errors.New("invalid or oversized encrypted transfer")
 	}
 	meta, data, err := decrypt(c, blob)
@@ -326,4 +335,20 @@ func Receive(ctx context.Context, rawCode string, opts Options) (string, error) 
 		return s.path, fmt.Errorf("file saved but receipt failed: %w", ErrUnconfirmed)
 	}
 	return s.path, nil
+}
+
+// relayReason turns a relay error body into one short printable line. The
+// relay is not trusted, so control characters never reach the terminal.
+func relayReason(body []byte) string {
+	line := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || r == unicode.ReplacementChar {
+			return ' '
+		}
+		return r
+	}, string(body))
+	line = strings.Join(strings.Fields(line), " ")
+	if r := []rune(line); len(r) > 120 {
+		line = string(r[:120]) + "…"
+	}
+	return line
 }

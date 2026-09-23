@@ -64,6 +64,9 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	}
 	fs := flag.NewFlagSet("jand", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	// The flag package's generated usage lists bare flags without the send and
+	// receive forms, so both help and parse errors show the command's own text.
+	fs.Usage = func() {}
 	url := os.Getenv("JAND_RELAY")
 	if url == "" {
 		url = "http://127.0.0.1:8787"
@@ -74,8 +77,10 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	wait := fs.Duration("wait", 0, "optional delivery confirmation timeout")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
+			usage(out)
 			return 0
 		}
+		usage(stderr)
 		return 2
 	}
 	if fs.NArg() != 1 || *wait < 0 || *wait > 10*time.Minute {
@@ -145,8 +150,9 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) int {
 	}
 	server := &http.Server{Handler: r, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8192}
 	defer server.Close()
-	config.Logger.Info("relay listening", "addr", listener.Addr().String(),
-		"max_sessions", config.MaxSessions, "max_stored", config.MaxStoredBytes, "ttl", config.TTL)
+	config.Logger.Info("relay listening", "version", version, "addr", listener.Addr().String(),
+		"max_sessions", config.MaxSessions, "max_stored", config.MaxStoredBytes, "ttl", config.TTL,
+		"upload_timeout", config.UploadTimeout)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	select {
