@@ -199,3 +199,9 @@
 - 兼容：用真实 0.4.1 程序（`~/go/bin/jand`）与 0.4.3 在 0.4.3 Relay 上互为发起方与接收方，邀请、加入、request/reply、双方 done、`all_done` 检查点均正常；`compat_smoke.py` 新旧四种组合交接均 `delivered`。0.4.3 客户端经公网 0.4.1 Relay 的交接与对话，由 Ubuntu 冷启动实测覆盖。
 - `go test -race`、`go vet`、`make smoke`（交接 5 项、对话 14 项）通过。
 - 部署后（毛仔用 `jand-0.4.3-relay-deploy.zip` 升级公网 Relay）：`/healthz` 返回 `"version":"0.4.3"`、`"access":false`；`/` 返回说明文字；`/r` 返回说明页（200，text/html）；用 0.4.3 客户端经公网发送，`expires_in` 为 1800，接收方不配置 Relay、只凭链接领取成功；公网 `chat_smoke.py`（14 项）与 `remote_smoke.py` 通过。发行包 6 个归档校验通过，macOS 版签名并公证（`spctl`：Notarized Developer ID），全部归档与其中的程序均不含真实域名或 IP。
+
+### 0.4.3 发布后
+
+GitHub Release v0.4.3（预发布，7 个附件经 API 核对均已上传、大小一致）。按新用户的方式在临时 HOME 中从 GitHub 实装：`curl …/main/install.sh | sh` 下载、校验、安装成功，`setup --yes` 经公网 Relay 自检通过，`version` 显示 Relay 0.4.3 兼容。发现两处，已在 main 上修正（安装脚本修正随 main 即时生效；setup 提示语随下个版本发布）：
+- 安装脚本在没有终端的环境（如 Agent 执行）里，`[ -r /dev/tty ]` 判断通过但实际打开失败，报 `/dev/tty: Device not configured`。改为真正尝试打开 `/dev/tty`，打不开就只提示下一步。
+- `setup` 结束语仍说「接收码」、让人自己运行 `chat watch`。按「人只跟 Agent 说话」改写：交出去给链接、收进来交链接、看经过让 Agent 打开页面、轮询方式下由 Agent 在后台开提醒。

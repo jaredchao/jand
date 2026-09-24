@@ -201,12 +201,12 @@ func setup(ctx context.Context, args []string, in io.Reader, out, stderr io.Writ
 	fmt.Fprintln(out)
 	printFootprint(out, cfg, record)
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "可以用了。")
-	fmt.Fprintln(out, "  · 交给别人：让你的 Agent「把这个任务用 jand 交接出去」，它会给你一个接收码，你转给对方。")
-	fmt.Fprintln(out, "  · 收别人的：把对方给的接收码交给你的 Agent。")
-	fmt.Fprintln(out, "  · 看对话经过：jand chat list，jand chat view <对话>。")
+	fmt.Fprintln(out, "可以用了。之后直接跟你的 Agent 说就行：")
+	fmt.Fprintln(out, "  · 交出去：「用 jand 把这个任务交接给某某」。它会给你一条接收链接，你用自己信任的渠道转给对方。")
+	fmt.Fprintln(out, "  · 收进来：把对方给的链接交给它：「用 jand 收一下：<链接>」。它会先讲给你听，你同意了才动手。")
+	fmt.Fprintln(out, "  · 看经过：「打开这次对话的记录」，它会在浏览器里打开对话页面。")
 	if wake == "poll" {
-		fmt.Fprintln(out, "  · 对话进行中，在自己的终端运行 jand chat watch <对话>，对方来消息时会提醒你去叫 Agent。")
+		fmt.Fprintln(out, "  · 对话进行中，它会在后台开一个提醒；对方来消息时你会收到系统通知，到时叫它继续。")
 	}
 	return 0
 }

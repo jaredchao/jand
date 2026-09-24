@@ -89,7 +89,9 @@ esac
 if [ "${JAND_NO_SETUP:-}" = "1" ]; then
   say ""
   say "接下来运行：${cmd} setup"
-elif [ -r /dev/tty ] && [ -w /dev/tty ] && "${DIR}/jand" help 2>/dev/null | grep -q "jand setup"; then
+elif (: </dev/tty) 2>/dev/null && "${DIR}/jand" help 2>/dev/null | grep -q "jand setup"; then
+  # -r/-w on /dev/tty pass even without a controlling terminal (an agent
+  # running this); only actually opening it tells.
   say ""
   # The script itself arrives on stdin under curl | sh; answers come from the terminal.
   "${DIR}/jand" setup </dev/tty

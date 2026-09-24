@@ -127,7 +127,7 @@ func TestSetupAsksWakeModeAsYesNo(t *testing.T) {
 	if cfg, _ := loadClientConfig(); cfg.Chat.WakeMode != "poll" || cfg.OutDir != filepath.Join(os.Getenv("HOME"), "inbox") {
 		t.Fatalf("wake mode %q, out dir %q", cfg.Chat.WakeMode, cfg.OutDir)
 	}
-	if !strings.Contains(out.String(), "(y/n) [n]") || !strings.Contains(out.String(), "jand chat watch") {
+	if !strings.Contains(out.String(), "(y/n) [n]") || !strings.Contains(out.String(), "系统通知") {
 		t.Fatalf("output:\n%s", out.String())
 	}
 }
