@@ -165,3 +165,11 @@
 - 用户不提 jand 时 Agent 想不到用它：skill 描述加上触发说法（接收码、交接任务、跨机器协作，中英文）。
 - 顺带发现：速查与正文让 Agent 按 `jand-template.md` 写交接文件，但用安装脚本或单独拷贝程序的人没有这个文件。模板也嵌入程序，新增 `jand help template`。
 - 未改（有意的设计）：接收方在 `join` 之前没有对话 ID；收到对话邀请要先问用户再加入。
+
+### 查看版本、安装位置与卸载（毛仔提出）
+
+- `jand version`：版本、程序实际位置、配置文件、Relay 的版本与兼容性（连不上时说明原因）。`jand --version` 仍只输出版本号，安装脚本和 `compat_smoke` 依赖它。
+- setup 结束时列出 jand 在本机用到的所有位置，并记入 `$JAND_HOME/installed.json`（程序、Claude skill、放行规则、setup 的备份、是否由 setup 新建了 `settings.json`、Codex 文件）；中文标签按显示宽度对齐。
+- `jand uninstall`：先列出删除 / 修改 / 保留，默认先打包历史（对话记录与页面、配置、流程、安装记录；不含对话状态中的密钥与访问令牌），再确认（默认否）后执行。只删 jand 认得的条目，`JAND_HOME` 里别的文件不动；收到的文件默认保留，选择删除时先打进备份包；收到文件的目录若是家目录、其上级或根目录，一律不提供删除；用户自己提供的令牌文件保留；`settings.json` 只删规则，若是 setup 为此新建且删完为空则整个删除；Codex 只删标记段。Windows 上提示手动删除程序和 PATH 项。
+- 测试：卸载后备份包内容恰为对话记录、页面、配置和安装记录，不含密钥与令牌；程序、jand 目录中的条目、skill、setup 的备份都被删除；`settings.json` 保留原有设置与规则、只少 jand 的那条；Codex 文件恢复原样；收到的文件默认保留、选择删除时进入备份包；`JAND_HOME` 中的外来文件与被误设为收件目录的家目录不受影响；`--dry-run` 不改任何东西；setup 新建的 `settings.json` 卸载后不残留。测试先抓到一处错误：用户用 `--token-file` 提供的令牌文件被当作 jand 的文件删除，已改为保留。
+- 用编译好的程序在临时 HOME 中实走 setup → version → uninstall：卸载后只剩历史备份包（以及原本就会存在的父目录）。

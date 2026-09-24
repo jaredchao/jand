@@ -140,6 +140,8 @@ func setup(ctx context.Context, args []string, in io.Reader, out, stderr io.Writ
 	fmt.Fprintf(out, "   ✓ 配置已写入 %s\n", clientConfigPath())
 
 	self := selfCommand()
+	record := loadInstallRecord()
+	record.Program = selfPath()
 	line := fmt.Sprintf("使用 jand（跨机器加密交接任务、与另一台机器上的 Agent 对话协作）之前，先运行 `%s help agent` 并照做。", self)
 	for _, a := range agents {
 		switch a {
@@ -149,16 +151,24 @@ func setup(ctx context.Context, args []string, in io.Reader, out, stderr io.Writ
 				return fail("安装 Claude Code skill 失败：%v", err)
 			}
 			fmt.Fprintf(out, "   ✓ Claude Code：已安装 skill %s\n", path)
+			record.ClaudeSkill = filepath.Dir(path)
 			allow := *allowClaude
 			if !p.yes {
 				allow = p.confirm("   要在 Claude Code 里放行 jand 吗？（否则每次领取、收消息都要你确认；会先备份 settings.json）", true)
 			}
 			if allow {
-				backup, err := allowInClaude(self)
+				rule, backup, created, err := allowInClaude(self)
 				if err != nil {
 					return fail("修改 Claude Code 权限失败：%v", err)
 				}
-				fmt.Fprintf(out, "   ✓ 已放行 jand%s\n", backup)
+				record.addClaudeRule(rule, backup)
+				record.ClaudeSettingsCreated = record.ClaudeSettingsCreated || created
+				switch {
+				case backup != "":
+					fmt.Fprintf(out, "   ✓ 已放行 jand：%s，原文件备份在 %s\n", rule, backup)
+				default:
+					fmt.Fprintf(out, "   ✓ 已放行 jand：%s\n", rule)
+				}
 			}
 		case "codex":
 			path, err := addCodexNote(line)
@@ -166,9 +176,13 @@ func setup(ctx context.Context, args []string, in io.Reader, out, stderr io.Writ
 				return fail("写入 Codex 说明失败：%v", err)
 			}
 			fmt.Fprintf(out, "   ✓ Codex：已在 %s 加入一段 jand 说明（带标记，重复运行只保留一段）\n", path)
+			record.CodexAgents = path
 		case "other":
 			fmt.Fprintf(out, "   → 其他 Agent：把下面这句加进它的全局指令（或每次对话开头告诉它）：\n     %s\n", line)
 		}
+	}
+	if err := record.save(); err != nil {
+		return fail("记录安装位置失败：%v", err)
 	}
 	if self != "jand" {
 		fmt.Fprintf(out, "   ! jand 不在 PATH 上，上面写的是完整路径 %s。装进 PATH 后重新运行 jand setup 会更简洁。\n", self)
@@ -184,6 +198,8 @@ func setup(ctx context.Context, args []string, in io.Reader, out, stderr io.Writ
 		}
 		fmt.Fprintln(out, "   ✓ 发送、领取、回执都正常")
 	}
+	fmt.Fprintln(out)
+	printFootprint(out, cfg, record)
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "可以用了。")
 	fmt.Fprintln(out, "  · 交给别人：让你的 Agent「把这个任务用 jand 交接出去」，它会给你一个接收码，你转给对方。")
@@ -371,24 +387,49 @@ func installClaudeSkill(self string) (string, error) {
 	return path, os.WriteFile(path, []byte(fmt.Sprintf(skillText, self)), 0644)
 }
 
-// allowInClaude adds a Bash permission for jand to Claude Code's user
-// settings, keeping every other setting. The old file is backed up first.
-func allowInClaude(self string) (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	path := filepath.Join(home, ".claude", "settings.json")
-	rule := "Bash(" + strings.Trim(self, `"`) + ":*)"
+func claudeSettingsPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".claude", "settings.json")
+}
+
+// readClaudeSettings parses Claude Code's user settings; a missing or empty
+// file is an empty object. The raw bytes are returned for backups.
+func readClaudeSettings(path string) (map[string]any, []byte, error) {
 	settings := map[string]any{}
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", err
+		return nil, nil, err
 	}
 	if len(bytes.TrimSpace(data)) > 0 {
 		if err := json.Unmarshal(data, &settings); err != nil {
-			return "", fmt.Errorf("%s 不是合法的 JSON，没有改动：%v", path, err)
+			return nil, nil, fmt.Errorf("%s 不是合法的 JSON，没有改动：%v", path, err)
 		}
+	}
+	return settings, data, nil
+}
+
+func writeClaudeSettings(path string, settings map[string]any) error {
+	out, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(out, '\n'), 0644)
+}
+
+// allowInClaude adds a Bash permission for jand to Claude Code's user
+// settings, keeping every other setting. The old file is backed up first;
+// the rule and the backup's path are returned so uninstall can undo it.
+// An empty backup means there was nothing to back up: the rule was already
+// there, or the file did not exist (created reports the latter).
+func allowInClaude(self string) (rule, backup string, created bool, err error) {
+	path := claudeSettingsPath()
+	rule = "Bash(" + strings.Trim(self, `"`) + ":*)"
+	settings, data, err := readClaudeSettings(path)
+	if err != nil {
+		return rule, "", false, err
 	}
 	perms, _ := settings["permissions"].(map[string]any)
 	if perms == nil {
@@ -397,27 +438,18 @@ func allowInClaude(self string) (string, error) {
 	allow, _ := perms["allow"].([]any)
 	for _, r := range allow {
 		if r == rule {
-			return "（之前已放行）", nil
+			return rule, "", false, nil
 		}
 	}
 	perms["allow"] = append(allow, rule)
 	settings["permissions"] = perms
-	out, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	backup := ""
 	if data != nil {
-		b := path + ".bak-" + time.Now().Format("20060102-150405")
-		if err := os.WriteFile(b, data, 0600); err != nil {
-			return "", err
+		backup = path + ".bak-" + time.Now().Format("20060102-150405")
+		if err := os.WriteFile(backup, data, 0600); err != nil {
+			return rule, "", false, err
 		}
-		backup = "，原文件备份在 " + b
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return "", err
-	}
-	return "：" + rule + backup, os.WriteFile(path, append(out, '\n'), 0644)
+	return rule, backup, data == nil, writeClaudeSettings(path, settings)
 }
 
 const codexBegin, codexEnd = "<!-- jand:begin -->", "<!-- jand:end -->"

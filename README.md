@@ -42,7 +42,16 @@ irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex
 jand setup
 ```
 
-按提示填 Relay 地址（有访问令牌的话再填令牌），选你用的 Agent、收到的文件放哪（默认 `~/jand-received`），它会：写好本机配置（令牌单独存成 600 权限的文件）；为 Claude Code 安装 skill 并可选放行 jand、为 Codex 在 `~/.codex/AGENTS.md` 加一段说明、为其他 Agent 打印一句要贴进它指令里的话；最后给自己发一个文件再收回来，确认整条链路可用。可以重复运行。不想交互时用参数：`jand setup --yes --relay URL [--token-file PATH] --agents claude,codex,other [--wake background|poll] [--allow-claude]`。
+按提示填 Relay 地址（有访问令牌的话再填令牌），选你用的 Agent、收到的文件放哪（默认 `~/jand-received`），它会：写好本机配置（令牌单独存成 600 权限的文件）；为 Claude Code 安装 skill 并可选放行 jand、为 Codex 在 `~/.codex/AGENTS.md` 加一段说明、为其他 Agent 打印一句要贴进它指令里的话；最后给自己发一个文件再收回来，确认整条链路可用。结束时会列出 jand 在本机用到的所有位置（程序、配置、令牌、对话记录、收到的文件、Claude Code / Codex 里改动的地方），并记在 `$JAND_HOME/installed.json`。客户端不写日志。可以重复运行。不想交互时用参数：`jand setup --yes --relay URL [--token-file PATH] --agents claude,codex,other [--wake background|poll] [--allow-claude]`。
+
+## 查看版本与卸载（0.4.3 起）
+
+```bash
+jand version       # 版本、程序位置、配置文件、Relay 的版本以及是否兼容（jand --version 只输出版本号）
+jand uninstall     # 先列出会删除、会修改、会保留的内容，确认后执行；--dry-run 只看不做
+```
+
+卸载只处理 jand 自己放下的东西：程序、`$JAND_HOME` 里 jand 的文件（配置、setup 存的令牌、安装记录、对话记录、流程）、Claude Code 的 skill 和 setup 留下的备份；`settings.json` 只删掉那条放行规则，`~/.codex/AGENTS.md` 只删掉带标记的那一段。动手之前默认先把历史（对话记录、页面、配置、流程，不含密钥和令牌）打包成 `~/jand-history-<时间>.tar.gz`。收到的文件是你自己的资料，默认保留；选择删除时会一起打进备份包。你自己提供的令牌文件不删。Windows 上程序无法删除正在运行的自己，会告诉你手动删哪个文件。
 
 ## 构建与本机试用
 

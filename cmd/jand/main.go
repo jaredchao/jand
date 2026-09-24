@@ -42,6 +42,10 @@ func usage(w io.Writer) {
   jand help template     the structure of a handoff packet
   jand setup             first-run configuration: relay, access token, your agents, self-test
   jand config [--json]   show the effective client configuration and its sources
+  jand version           version, program path, config, and whether the relay is compatible
+                         (jand --version prints only the number)
+  jand uninstall [--dry-run]
+                         remove everything jand placed on this machine; history is archived first
   jand relay [--listen 127.0.0.1:8787] [--config relay.json] [--print-config]
 
 Options (before file/code):
@@ -72,9 +76,15 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 		usage(out)
 		return 0
 	}
-	if args[0] == "version" || args[0] == "--version" {
+	if args[0] == "--version" {
 		fmt.Fprintln(out, version)
 		return 0
+	}
+	if args[0] == "version" {
+		return versionCommand(ctx, args[1:], out, stderr)
+	}
+	if args[0] == "uninstall" {
+		return uninstall(args[1:], os.Stdin, out, stderr)
 	}
 	if args[0] == "relay" {
 		return serve(ctx, args[1:], out, stderr)
