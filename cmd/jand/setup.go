@@ -97,21 +97,23 @@ func setup(ctx context.Context, args []string, in io.Reader, out, stderr io.Writ
 		return fail("%v", err)
 	}
 
-	// 4. How the agent waits for chat messages.
-	wake := firstSet(*wakeFlag, cfg.Chat.WakeMode)
-	if wake == "" {
-		wake = "poll"
-		if slices.Contains(agents, "claude") {
-			wake = "background"
-		}
-	}
-	for {
-		wake = p.ask("4. 你的 Agent 能在后台命令结束时被唤醒吗？background = 能（Claude Code 能，推荐），poll = 不能", wake)
-		if slices.Contains(wakeModes, wake) {
-			break
-		}
-		if p.yes {
+	// 4. How the agent waits for chat messages. Claude Code can wait in the
+	// background, so a Claude-only setup needs no question; otherwise a yes
+	// or no is all a person should have to answer.
+	wake := *wakeFlag
+	switch {
+	case wake != "":
+		if !slices.Contains(wakeModes, wake) {
 			return fail("--wake 只能是 background 或 poll")
+		}
+	case len(agents) == 1 && agents[0] == "claude":
+		wake = "background"
+		fmt.Fprintln(out, "4. 等消息的方式：Claude Code 能在后台等对方的消息，已自动设好。")
+	default:
+		def := cfg.Chat.WakeMode == "background" || (cfg.Chat.WakeMode == "" && slices.Contains(agents, "claude"))
+		wake = "poll"
+		if p.confirm("4. 你的 Agent 能在后台等对方的消息吗？（Claude Code 能；不确定就选 n，对话时会改为定时查看，并提醒你）", def) {
+			wake = "background"
 		}
 	}
 	cfg.Chat.WakeMode = wake

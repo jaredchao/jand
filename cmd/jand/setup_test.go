@@ -80,9 +80,9 @@ func TestSetupNonInteractive(t *testing.T) {
 
 func TestSetupInteractiveTypedToken(t *testing.T) {
 	home, url := setupEnv(t)
-	// Answers: relay, token, Claude Code yes, Codex no, others no, wake mode
-	// default, allow in Claude Code no.
-	input := strings.Join([]string{url, "team-secret", "y", "n", "n", "", "n"}, "\n") + "\n"
+	// Answers: relay, token, Claude Code yes, Codex no, others no, allow in
+	// Claude Code no. With Claude Code alone the wake mode is not asked.
+	input := strings.Join([]string{url, "team-secret", "y", "n", "n", "n"}, "\n") + "\n"
 	var out, stderr bytes.Buffer
 	if code := setup(context.Background(), nil, strings.NewReader(input), &out, &stderr); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, out.String(), stderr.String())
@@ -111,5 +111,22 @@ func TestSetupRejectsUnreachableRelay(t *testing.T) {
 	}
 	if _, err := os.Stat(clientConfigPath()); err == nil {
 		t.Fatal("config written for an unreachable relay")
+	}
+}
+
+func TestSetupAsksWakeModeAsYesNo(t *testing.T) {
+	_, url := setupEnv(t)
+	// Claude Code no, Codex no, another agent yes: the wake question is a
+	// yes/no; "n" means the agent polls.
+	input := strings.Join([]string{url, "team-secret", "n", "n", "y", "n"}, "\n") + "\n"
+	var out, stderr bytes.Buffer
+	if code := setup(context.Background(), []string{"--skip-test"}, strings.NewReader(input), &out, &stderr); code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", code, out.String(), stderr.String())
+	}
+	if cfg, _ := loadClientConfig(); cfg.Chat.WakeMode != "poll" {
+		t.Fatalf("wake mode %q", cfg.Chat.WakeMode)
+	}
+	if !strings.Contains(out.String(), "(y/n) [n]") || !strings.Contains(out.String(), "jand chat watch") {
+		t.Fatalf("output:\n%s", out.String())
 	}
 }
