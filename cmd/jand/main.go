@@ -39,6 +39,7 @@ func usage(w io.Writer) {
                    (see jand chat --help)
   jand help agent        the operating guide for agents, filled in for this machine
                          (give it to your agent: "run jand help agent and follow it")
+  jand setup             first-run configuration: relay, access token, your agents, self-test
   jand config [--json]   show the effective client configuration and its sources
   jand relay [--listen 127.0.0.1:8787] [--config relay.json] [--print-config]
 
@@ -82,6 +83,9 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	}
 	if args[0] == "config" {
 		return configCommand(args[1:], out, stderr)
+	}
+	if args[0] == "setup" {
+		return setup(ctx, args[1:], os.Stdin, out, stderr)
 	}
 	sender := args[0] == "send"
 	if sender {

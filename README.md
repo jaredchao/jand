@@ -22,6 +22,14 @@ jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远�
 
 [product-original.md](docs/product-original.md) 是原始需求，[protocol.md](docs/protocol.md) 是旧 0.1 WebSocket 原型的协议，两者只作历史记录。
 
+## 第一次使用（0.4.3 起）
+
+```bash
+jand setup
+```
+
+按提示填 Relay 地址（有访问令牌的话再填令牌），选你用的 Agent，它会：写好本机配置（令牌单独存成 600 权限的文件）；为 Claude Code 安装 skill 并可选放行 jand、为 Codex 在 `~/.codex/AGENTS.md` 加一段说明、为其他 Agent 打印一句要贴进它指令里的话；最后给自己发一个文件再收回来，确认整条链路可用。可以重复运行。不想交互时用参数：`jand setup --yes --relay URL [--token-file PATH] --agents claude,codex,other [--wake background|poll] [--allow-claude]`。
+
 ## 构建与本机试用
 
 需要 Go 1.24 或更高版本构建，没有第三方依赖；编译后的程序不需要 Go。
