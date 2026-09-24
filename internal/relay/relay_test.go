@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -139,5 +140,23 @@ func TestHealthzReportsVersionNotSessions(t *testing.T) {
 		if _, ok := body[leak]; ok {
 			t.Fatalf("healthz reveals %s", leak)
 		}
+	}
+}
+
+func TestRootSaysWhatThisIs(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Version = "9.9.9"
+	r := New(cfg)
+	defer r.Close()
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	resp, err := srv.Client().Get(srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.Contains(string(body), "jand relay 9.9.9") || !strings.Contains(string(body), "/healthz") {
+		t.Fatalf("%d %q", resp.StatusCode, body)
 	}
 }

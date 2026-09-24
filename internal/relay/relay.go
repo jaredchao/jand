@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -218,6 +219,12 @@ func equal(a, b string) bool {
 
 func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if req.URL.Path == "/" && (req.Method == http.MethodGet || req.Method == http.MethodHead) {
+		// A 404 here read as "the relay is down" to someone probing it.
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintf(w, "jand relay %s\nIt passes end-to-end encrypted handoffs and chats between jand clients; it cannot read them.\nHealth: /healthz\n", r.config.Version)
+		return
+	}
 	if req.URL.Path == "/healthz" && req.Method == http.MethodGet {
 		// Body added so an operator can tell a live process from a stale proxy
 		// cache or a listener that accepts but no longer serves, and which

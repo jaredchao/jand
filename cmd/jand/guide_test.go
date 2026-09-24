@@ -38,6 +38,10 @@ func TestHelpAgentTopic(t *testing.T) {
 	if code := run(context.Background(), []string{"help"}, &out, &stderr); code != 0 || !strings.Contains(out.String(), "jand help agent") {
 		t.Fatalf("help should point to the agent topic: %q", out.String())
 	}
+	out.Reset()
+	if code := run(context.Background(), []string{"help", "template"}, &out, &stderr); code != 0 || !strings.HasPrefix(out.String(), "# 任务交接包") {
+		t.Fatalf("help template: %q", out.String())
+	}
 	if code := run(context.Background(), []string{"help", "nope"}, &out, &stderr); code != 2 {
 		t.Fatalf("unknown topic: %d", code)
 	}

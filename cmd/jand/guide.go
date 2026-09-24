@@ -61,8 +61,12 @@ func selfCommand() string {
 // helpTopic serves jand help <topic>. The only topic is agent: the guide an
 // agent reads before using jand, which is too long to be the usage text.
 func helpTopic(args []string, out, stderr io.Writer) int {
+	if len(args) == 1 && args[0] == "template" {
+		fmt.Fprint(out, docs.Template)
+		return 0
+	}
 	if len(args) != 1 || args[0] != "agent" {
-		fmt.Fprintln(stderr, "usage: jand help [agent]   (agent: the operating guide for agents, filled in for this machine)")
+		fmt.Fprintln(stderr, "usage: jand help [agent|template]   (agent: the operating guide for agents; template: the structure of a handoff packet)")
 		return 2
 	}
 	cfg, err := loadClientConfig()

@@ -151,3 +151,17 @@
 - setup 测试（临时 HOME 与 JAND_HOME、要求令牌的测试 Relay）：免交互跑两遍，配置、skill、Claude 放行（原有设置保留、只备份一次）、Codex 说明（原内容不动、只有一段）都正确，自检通过；交互输入令牌时令牌文件为 600、`config.json` 中没有令牌本身，回答「否」的 Agent 不被改动；Relay 连不上时失败且不写配置。另用编译好的程序在临时 HOME 中接本机开启令牌的 Relay 真实跑一遍交互流程，全部步骤通过。
 - 安装脚本 `install.sh`（macOS/Linux）与 `install.ps1`（Windows）：从 GitHub Release 下载本机对应的包和 `SHA256SUMS.txt`，校验后安装，再运行 `jand setup`（`curl | sh` 时从 `/dev/tty` 读回答）。所有发行版都是预发布版，而 GitHub 的 `/releases/latest` 会跳过预发布版，所以改用版本列表取最新的一个。`install.sh` 实测（用 GitHub 上真实的 v0.4.1）：指定版本与自动取最新版都安装成功；模拟校验文件缺条目、哈希不一致两种情况都中止且不创建安装目录；以管道方式运行（同 `curl | sh`）正常；shellcheck 无告警。实测中发现变量后紧跟中文全角标点（如 `$version（`）时 bash 会把全角字符当作变量名的一部分而报错，已统一改为 `${变量}` 写法。**`install.ps1` 未实际运行过**（本机没有 PowerShell），需要在 Windows 上验证，尤其是旧版控制台对中文输出的显示。
 - 发行包的 QUICKSTART 按「傻瓜化」重写：先 `jand setup`，然后直接跟 Agent 说要交出去、收进来还是协作，再告诉人怎么用 `view` / `watch` 看过程；命令细节交给 `jand help agent`。改写时发现并去掉一句错话：原稿说「这个包默认用某 Relay，直接回车即可」，但包里的 Relay 地址并不会成为 `setup` 的默认值。`release.py` 实际打包 6 个归档成功，Linux 包内 QUICKSTART 与 AGENT.md 渲染正确、无残留标记。INSTALL 标题去掉过时的「0.2」。
+
+### 冷启动实测（Ubuntu 22.04 x86_64 上的 Claude Code，2026-09-24）
+
+毛仔在内网 Ubuntu 服务器上照 QUICKSTART 解压、运行 `setup`（Relay 用公网 0.4.1），然后在全新的 Claude Code 会话里只说「用 jand 收一下：<码>」。Agent 通过 skill 找到 jand、运行 `jand help agent`，先把内容与目标给用户看，同意后加入对话，只读检查后以 delivery 交付环境报告，双方 done，Relay 以 `all_done` 暂停，checkpoint 事件带上了「暂停不是结束」的提示。领取与收发没有被宿主拦截（`setup` 写入的 `Bash(jand:*)` 放行生效）；`setup` 合并写入 `~/.claude/settings.json`，保留了原有的 `theme`。
+
+实测中毛仔指出：等消息方式要人输入 `background` / `poll` 太难。改为只选 Claude Code 时自动设定，其他情况用 y/n 提问。
+
+对方 Agent 报告的问题与处理：
+- Relay 根路径返回 404，被当成「Relay 挂了」：根路径改为返回 200 和一段说明（程序、版本、`/healthz`）。
+- 默认输出目录是相对当前目录的 `received/`，Agent 在哪干活文件就落在哪：`setup` 新增一步「收到的文件放在哪个目录」，默认 `~/jand-received`（绝对路径，支持 `~`，参数 `--out-dir`）。
+- skill 只是指针，要读完 294 行契约才知道命令：`help agent` 开头加「速查」一节（四种场景的命令、铁律、退出码），skill 说明写明读速查即可动手。
+- 用户不提 jand 时 Agent 想不到用它：skill 描述加上触发说法（接收码、交接任务、跨机器协作，中英文）。
+- 顺带发现：速查与正文让 Agent 按 `jand-template.md` 写交接文件，但用安装脚本或单独拷贝程序的人没有这个文件。模板也嵌入程序，新增 `jand help template`。
+- 未改（有意的设计）：接收方在 `join` 之前没有对话 ID；收到对话邀请要先问用户再加入。

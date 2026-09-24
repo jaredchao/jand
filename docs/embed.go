@@ -8,3 +8,8 @@ import _ "embed"
 //
 //go:embed AGENT.md
 var Agent string
+
+// Template is docs/jand-template.md: the structure of a handoff packet.
+//
+//go:embed jand-template.md
+var Template string

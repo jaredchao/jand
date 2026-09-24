@@ -55,7 +55,7 @@ func TestSetupNonInteractive(t *testing.T) {
 	}
 
 	cfg, err := loadClientConfig()
-	if err != nil || cfg.Relay != url || cfg.AccessTokenFile != tokenFile || cfg.Chat.WakeMode != "background" {
+	if err != nil || cfg.Relay != url || cfg.AccessTokenFile != tokenFile || cfg.Chat.WakeMode != "background" || cfg.OutDir != filepath.Join(home, "jand-received") {
 		t.Fatalf("config: %+v %v", cfg, err)
 	}
 	skill, _ := os.ReadFile(filepath.Join(home, ".claude", "skills", "jand", "SKILL.md"))
@@ -80,16 +80,17 @@ func TestSetupNonInteractive(t *testing.T) {
 
 func TestSetupInteractiveTypedToken(t *testing.T) {
 	home, url := setupEnv(t)
-	// Answers: relay, token, Claude Code yes, Codex no, others no, allow in
-	// Claude Code no. With Claude Code alone the wake mode is not asked.
-	input := strings.Join([]string{url, "team-secret", "y", "n", "n", "n"}, "\n") + "\n"
+	// Answers: relay, token, Claude Code yes, Codex no, others no, output
+	// directory default, allow in Claude Code no. With Claude Code alone the
+	// wake mode is not asked.
+	input := strings.Join([]string{url, "team-secret", "y", "n", "n", "", "n"}, "\n") + "\n"
 	var out, stderr bytes.Buffer
 	if code := setup(context.Background(), nil, strings.NewReader(input), &out, &stderr); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, out.String(), stderr.String())
 	}
 	cfg, _ := loadClientConfig()
 	info, err := os.Stat(cfg.AccessTokenFile)
-	if err != nil || info.Mode().Perm() != 0600 || cfg.Chat.WakeMode != "background" {
+	if err != nil || info.Mode().Perm() != 0600 || cfg.Chat.WakeMode != "background" || cfg.OutDir != filepath.Join(home, "jand-received") {
 		t.Fatalf("token file %v %v, config %+v", info, err, cfg)
 	}
 	if data, _ := os.ReadFile(clientConfigPath()); strings.Contains(string(data), "team-secret") {
@@ -118,13 +119,13 @@ func TestSetupAsksWakeModeAsYesNo(t *testing.T) {
 	_, url := setupEnv(t)
 	// Claude Code no, Codex no, another agent yes: the wake question is a
 	// yes/no; "n" means the agent polls.
-	input := strings.Join([]string{url, "team-secret", "n", "n", "y", "n"}, "\n") + "\n"
+	input := strings.Join([]string{url, "team-secret", "n", "n", "y", "n", "~/inbox"}, "\n") + "\n"
 	var out, stderr bytes.Buffer
 	if code := setup(context.Background(), []string{"--skip-test"}, strings.NewReader(input), &out, &stderr); code != 0 {
 		t.Fatalf("exit %d\n%s\n%s", code, out.String(), stderr.String())
 	}
-	if cfg, _ := loadClientConfig(); cfg.Chat.WakeMode != "poll" {
-		t.Fatalf("wake mode %q", cfg.Chat.WakeMode)
+	if cfg, _ := loadClientConfig(); cfg.Chat.WakeMode != "poll" || cfg.OutDir != filepath.Join(os.Getenv("HOME"), "inbox") {
+		t.Fatalf("wake mode %q, out dir %q", cfg.Chat.WakeMode, cfg.OutDir)
 	}
 	if !strings.Contains(out.String(), "(y/n) [n]") || !strings.Contains(out.String(), "jand chat watch") {
 		t.Fatalf("output:\n%s", out.String())
