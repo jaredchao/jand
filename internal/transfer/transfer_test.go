@@ -329,3 +329,27 @@ func TestAccessTokenGuardsCreationOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestQueuedCarriesLinkAndExpiry(t *testing.T) {
+	_, s := server(t, relay.DefaultConfig())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var queued Event
+	if err := Send(ctx, fixture(t, []byte("x")), Options{RelayURL: s.URL, Emit: func(e Event) {
+		if e.Event == "queued" {
+			queued = e
+		}
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if queued.Link != s.URL+"/r#"+queued.Code || queued.ExpiresIn != 1800 {
+		t.Fatalf("%+v", queued)
+	}
+	relayURL, code, ok := ParseShareLink(queued.Link)
+	if !ok || relayURL != s.URL {
+		t.Fatalf("link does not parse back: %q %v", relayURL, ok)
+	}
+	if _, err := Receive(ctx, code, Options{RelayURL: relayURL, OutputDir: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+}

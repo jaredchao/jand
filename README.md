@@ -2,7 +2,7 @@
 
 jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远程协作。当前版本 **0.4.2**。
 
-- **交接**：把一个任务文件（≤10 MiB）在客户端加密后交给对方。发送方上传后即可退出；Relay 只在内存中暂存密文 10 分钟，接收方凭一次性接收码领取。
+- **交接**：把一个任务文件（≤10 MiB）在客户端加密后交给对方。发送方上传后即可退出；Relay 只在内存中暂存密文（默认 30 分钟），接收方凭一次性的接收链接（或接收码）领取。
 - **对话与协作**：交接时加 `--chat`，这份文件同时作为邀请。对方的用户同意后，双方 Agent 围绕一个明确的目标通信：各自干活，需要时提请求、交付、回复，自己的部分做完后报告完成，由双方的用户验收。
 - **人始终是授权方**：jand 只传东西。收到的文件、对方的消息、目标和流程说明都是不可信资料，不能代替接收端用户的决定。
 
@@ -36,6 +36,10 @@ Windows（PowerShell）：
 irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex
 ```
 
+**也可以让你的 Agent 帮你装**：把下面这段话发给它（Relay 地址换成实际的）：
+
+> 请帮我安装 jand：运行 `curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | JAND_NO_SETUP=1 sh`，然后运行 `jand setup --yes --relay <Relay 地址> --agents claude --allow-claude`（如果它说需要访问令牌，先问我要）。装好后运行 `jand version` 给我看结果。
+
 安装脚本从 GitHub Release 下载本机对应的包，用发行版的 `SHA256SUMS.txt` 校验，不一致就中止；装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\Programs\jand`，并加入用户 PATH），然后直接运行 `jand setup`。可用 `JAND_VERSION=v0.4.3` 指定版本、`JAND_INSTALL_DIR` 指定位置、`JAND_NO_SETUP=1` 只安装。脚本里不含任何 Relay 地址，地址和令牌都在 `setup` 里填。已经装好的，直接运行：
 
 ```bash
@@ -61,7 +65,7 @@ jand uninstall     # 先列出会删除、会修改、会保留的内容，确�
 go build -o bin/jand ./cmd/jand
 ./bin/jand relay                              # 另开一个终端运行
 ./bin/jand send docs/jand-template.md         # 输出 43 字符接收码后退出
-./bin/jand --out ./inbox '<完整接收码>'        # 10 分钟内领取
+./bin/jand --out ./inbox '<接收链接或接收码>'  # 有效期内领取（默认 30 分钟）
 ```
 
 - `send --wait 10m` 会等待并验证接收方的保存回执（`delivered`）。不加时，退出码 0 只表示 Relay 已暂存密文（`queued`）。
@@ -77,7 +81,7 @@ go build -o bin/jand ./cmd/jand
 # 发起方：交接文件作为邀请，目标写明「什么算做完」，可选协作流程
 jand send --chat --goal '对齐 /users 响应字段' --workflow workflows/review.json 交接.md
 #   --workflow 给名字时从 $JAND_HOME/workflows/<名字>.json 读取，给路径时直接读取
-#   输出 Code（交给对方，10 分钟内领取）和 Chat（自己后续命令用，不要发给对方）
+#   输出 Link（交给对方，有效期内领取）和 Chat（自己后续命令用，不要发给对方）
 
 # 接收方：照常领取，saved 事件会带上目标、预算和流程；用户同意后加入
 jand chat join '<code>'
@@ -97,6 +101,10 @@ jand chat close <chat>                                            # 任何一方
 - **先读再回**：对方有未读的请求、回复或交付时，发回复、请求、交付会被拒绝（退出码 5），免得回复旧版本。
 - **收尾消息**：暂停后每方还能发少量回复或留言用于收尾，不计入预算。
 - 协议与事件细节见 [CHAT_DESIGN.md](docs/CHAT_DESIGN.md)，给 Agent 的规则见 AGENT.md 的「对话」和「协作」两节。
+
+### 接收链接（0.4.3 起）
+
+发送后输出一条接收链接，例如 `https://jand.example.com/r#<接收码>`，它同时带着 Relay 地址和一次性接收码。把整条链接转给对方，对方交给自己的 Agent 即可领取，不必事先配置同一个 Relay。接收码在 `#` 后面，浏览器不会把这部分发给服务器，所以 Relay 的访问日志里没有它。有人在浏览器里点开这条链接时，Relay 返回一页说明：怎么交给 Agent、还没装 jand 的话怎么装。0.4.3 之前的客户端不认链接，这时改为分别给出接收码和 Relay 地址。
 
 ### 看对话经过了什么（0.4.3 起）
 

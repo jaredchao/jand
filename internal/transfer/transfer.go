@@ -52,6 +52,12 @@ type Event struct {
 	// Relay is the relay a queued transfer sits in. The receiver must use the
 	// same one, and a wrong JAND_RELAY or config value is easy to miss.
 	Relay string `json:"relay,omitempty"`
+	// Link carries the relay and the code in one string to hand over; the
+	// code sits after #, which browsers never send to the server.
+	Link string `json:"link,omitempty"`
+	// ExpiresIn is how many seconds the relay keeps the ciphertext; 0 when
+	// the relay does not say (before 0.4.3).
+	ExpiresIn int `json:"expires_in,omitempty"`
 
 	// Chat fields. Chat is the local chat id; ChatInvite marks a received
 	// packet whose sender asked for a chat, which is a request, not consent.
@@ -349,7 +355,9 @@ func Send(ctx context.Context, filename string, opts Options) error {
 		}
 		return fmt.Errorf("relay rejected transfer: HTTP %d", resp.StatusCode)
 	}
-	queued := Event{Event: "queued", Code: c.String(), Relay: o.RelayURL, SHA256: digest, Size: int64(len(data))}
+	expires, _ := strconv.Atoi(resp.Header.Get("X-Handoff-Expires-In"))
+	queued := Event{Event: "queued", Code: c.String(), Relay: o.RelayURL, Link: ShareLink(o.RelayURL, c.String()),
+		ExpiresIn: expires, SHA256: digest, Size: int64(len(data))}
 	if chat != nil {
 		queued.Chat = chat.ID
 	}
@@ -507,4 +515,27 @@ func relayReason(body []byte) string {
 		line = string(r[:120]) + "…"
 	}
 	return line
+}
+
+// ShareLink puts a relay and a receive code into one string to hand over.
+func ShareLink(relay, code string) string {
+	return strings.TrimRight(relay, "/") + "/r#" + code
+}
+
+// ParseShareLink splits a link made by ShareLink back into relay and code.
+// ok is false for anything else, such as a bare code.
+func ParseShareLink(s string) (relay, rawCode string, ok bool) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "https://") && !strings.HasPrefix(s, "http://") {
+		return "", "", false
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" || u.Fragment == "" {
+		return "", "", false
+	}
+	path := strings.TrimSuffix(u.Path, "/")
+	if !strings.HasSuffix(path, "/r") {
+		return "", "", false
+	}
+	return u.Scheme + "://" + u.Host + strings.TrimSuffix(path, "/r"), u.Fragment, true
 }

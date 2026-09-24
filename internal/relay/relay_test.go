@@ -160,3 +160,19 @@ func TestRootSaysWhatThisIs(t *testing.T) {
 		t.Fatalf("%d %q", resp.StatusCode, body)
 	}
 }
+
+func TestLinkLandingPage(t *testing.T) {
+	r := New(DefaultConfig())
+	defer r.Close()
+	srv := httptest.NewServer(r)
+	defer srv.Close()
+	resp, err := srv.Client().Get(srv.URL + "/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.Contains(string(body), "jand 接收链接") || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "default-src 'none'") {
+		t.Fatalf("%d %q", resp.StatusCode, resp.Header)
+	}
+}

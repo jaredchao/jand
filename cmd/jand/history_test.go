@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -64,5 +66,26 @@ func TestLogFollowStopsWhenChatEnds(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("log --follow did not stop after the chat closed")
+	}
+}
+
+func TestWatchNotices(t *testing.T) {
+	if title, _ := watchNotice(transfer.Event{Event: "message", ID: "g2", Kind: "request", Text: "字段？"}); title != "jand：对方发来 g2 request" {
+		t.Fatalf("message notice %q", title)
+	}
+	if title, _ := watchNotice(transfer.Event{Event: "resumed"}); title != "" {
+		t.Fatal("resumed should not interrupt anyone")
+	}
+}
+
+func TestAppleScriptQuoting(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("osascript is macOS only")
+	}
+	for _, s := range []string{`plain`, `say "hi"`, `back\slash`, `"; do shell script "touch /tmp/x`, "中文 \\\" 混合"} {
+		out, err := exec.Command("osascript", "-e", "return "+appleScriptString(s)).Output()
+		if err != nil || strings.TrimRight(string(out), "\n") != s {
+			t.Errorf("%q came back as %q (%v)", s, out, err)
+		}
 	}
 }

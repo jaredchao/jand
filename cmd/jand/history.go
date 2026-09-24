@@ -32,6 +32,8 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 	follow := fs.Bool("follow", false, "log: keep printing new entries")
 	outPath := fs.String("out", "", "view: write the page here")
 	noOpen := fs.Bool("no-open", false, "view: do not open a browser")
+	notify := fs.Bool("notify", false, "watch: also show a desktop notification")
+	all := fs.Bool("all", false, "list: include chats that ended more than a week ago")
 	if err := fs.Parse(args); err != nil {
 		chatUsage(stderr)
 		return 2
@@ -46,6 +48,15 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 			fmt.Fprintln(out, "Watching for events your agent has not read yet. Ctrl-C stops watching; it never takes messages from the agent.")
 		}
 		emit := watchPrinter(out, *jsonOutput)
+		if *notify {
+			print := emit
+			emit = func(e transfer.Event) {
+				print(e)
+				if title, body := watchNotice(e); title != "" {
+					desktopNotify(title, body)
+				}
+			}
+		}
 		if err := transfer.ChatWatch(ctx, fs.Arg(0), 0, transfer.Options{Emit: emit}); err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
@@ -62,7 +73,24 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
+		hidden := 0
+		if !*all {
+			// Old finished chats only cost whoever reads the list, often an agent.
+			cutoff := time.Now().Add(-7 * 24 * time.Hour)
+			kept := list[:0]
+			for _, c := range list {
+				if (c.Status == "ended" || c.Status == "unknown") && c.Last.Before(cutoff) {
+					hidden++
+					continue
+				}
+				kept = append(kept, c)
+			}
+			list = kept
+		}
 		printList(out, list, *jsonOutput)
+		if hidden > 0 && !*jsonOutput {
+			fmt.Fprintf(out, "(%d chats that ended more than a week ago are hidden; --all shows them)\n", hidden)
+		}
 		return 0
 	}
 	if fs.NArg() != 1 {
@@ -147,6 +175,44 @@ func watchPrinter(out io.Writer, jsonOutput bool) func(transfer.Event) {
 			fmt.Fprintf(out, "%s  %s\n", now, e.Event)
 		}
 	}
+}
+
+// watchNotice is the desktop notification for a watched event; an empty
+// title means the event is not worth interrupting a person for.
+func watchNotice(e transfer.Event) (title, body string) {
+	switch e.Event {
+	case "message":
+		return "jand：对方发来 " + e.ID + " " + e.Kind, "你的 Agent 还没读，去叫它看一下。" + clip(oneLine(e.Text), 80)
+	case "done":
+		return "jand：对方报告完成", "叫你的 Agent 看一下，并核对结果。"
+	case "checkpoint":
+		return "jand：对话暂停了", "需要你决定结束还是继续，去问你的 Agent。"
+	case "proposal":
+		return "jand：对方提出了新目标", "需要你同意才会继续，去问你的 Agent。"
+	case "closed", "expired", "declined":
+		return "jand：对话结束了", "去问你的 Agent 结论。"
+	}
+	return "", ""
+}
+
+// desktopNotify shows a notification where the system offers a command for
+// it: osascript on macOS, notify-send on Linux. Failure is silent: the
+// terminal line and bell are still there.
+func desktopNotify(title, body string) {
+	switch runtime.GOOS {
+	case "darwin":
+		exec.Command("osascript", "-e", "display notification "+appleScriptString(body)+" with title "+appleScriptString(title)).Run()
+	case "linux":
+		if path, err := exec.LookPath("notify-send"); err == nil {
+			exec.Command(path, title, body).Run()
+		}
+	}
+}
+
+// appleScriptString quotes s as an AppleScript string literal. Remote text
+// reaches it, so a quote must not end the literal early.
+func appleScriptString(s string) string {
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
 }
 
 func printList(out io.Writer, list []transfer.ChatSummary, jsonOutput bool) {

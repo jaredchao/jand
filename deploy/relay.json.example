@@ -3,7 +3,7 @@
   "handoff": {
     "max_sessions": 128,
     "max_stored_bytes": 67108864,
-    "ttl": "10m",
+    "ttl": "30m",
     "upload_timeout": "2m"
   },
   "chat": {
@@ -12,7 +12,7 @@
     "max_messages": 200,
     "default_budget": 40,
     "max_pause_notes": 3,
-    "invite_ttl": "15m",
+    "invite_ttl": "35m",
     "decide_ttl": "30m",
     "idle_ttl": "60m",
     "lifetime": "6h",

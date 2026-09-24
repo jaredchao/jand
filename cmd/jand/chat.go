@@ -34,14 +34,16 @@ func chatUsage(w io.Writer) {
   jand chat close <chat>                       end the chat now, for both sides
 
 See what happened (local record only; nothing is fetched from the relay):
-  jand chat list                               chats on this machine: status, goal, last activity
+  jand chat list [--all]                       chats on this machine: status, goal, last activity
+                                               (--all: also those that ended over a week ago)
   jand chat log [--follow] <chat>              timeline in the terminal; --follow keeps printing
                                                new entries as your side sends and receives
   jand chat view [--out FILE] [--no-open] <chat>
                                                write the timeline as one HTML page and open it
-  jand chat watch <chat>                       for the person, in their own terminal: rings when
+  jand chat watch [--notify] <chat>            for the person, in their own terminal: rings when
                                                the peer sent something your agent has not read yet
-                                               (it only looks; the agent still receives everything)
+                                               (it only looks; the agent still receives everything);
+                                               --notify also shows a desktop notification
 
 Message kinds (--kind): note (default), progress (no answer expected),
 request (expects an answer), reply (needs --reply-to), delivery (something is
@@ -136,12 +138,22 @@ func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
 		if fs.NArg() != 1 {
 			return usageErr()
 		}
-		_, err = transfer.ChatJoin(ctx, fs.Arg(0), o)
+		rawCode, lerr := fromLink(fs.Arg(0), &o, set["relay"])
+		if lerr != nil {
+			fmt.Fprintln(stderr, lerr)
+			return 2
+		}
+		_, err = transfer.ChatJoin(ctx, rawCode, o)
 	case "decline":
 		if fs.NArg() != 1 {
 			return usageErr()
 		}
-		err = transfer.ChatDecline(ctx, fs.Arg(0), *reason, o)
+		rawCode, lerr := fromLink(fs.Arg(0), &o, set["relay"])
+		if lerr != nil {
+			fmt.Fprintln(stderr, lerr)
+			return 2
+		}
+		err = transfer.ChatDecline(ctx, rawCode, *reason, o)
 	case "send":
 		var text string
 		switch {

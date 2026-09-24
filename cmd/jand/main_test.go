@@ -42,22 +42,45 @@ func TestDashLeadingCodeIsNotAFlag(t *testing.T) {
 	}
 }
 
-func TestChatQueuedSaysWhichIdGoesToPeer(t *testing.T) {
+func TestQueuedGivesTheLink(t *testing.T) {
 	var out, stderr bytes.Buffer
-	emitter(false, &out, &stderr)(transfer.Event{Event: "queued", Code: "C0DE", Relay: "https://relay.example.com", Chat: "3323ff55ae57c7ea419a68f2e8de5f9c"})
+	emitter(false, &out, &stderr)(transfer.Event{Event: "queued", Code: "C0DE", Relay: "https://relay.example.com",
+		Link: "https://relay.example.com/r#C0DE", ExpiresIn: 1800, Chat: "3323ff55ae57c7ea419a68f2e8de5f9c"})
 	text := out.String()
-	if !strings.Contains(text, "Code: C0DE\n  -> Give this receive code to the other side") ||
-		!strings.Contains(text, "Relay: https://relay.example.com\n  -> The other side must use this same relay") ||
+	if !strings.HasPrefix(text, "Link: https://relay.example.com/r#C0DE\n  -> Give this link to the other side") ||
+		!strings.Contains(text, "Claim within 30 minutes") || !strings.Contains(text, "Code: C0DE") ||
 		!strings.Contains(text, "Do not send it to the other side") {
 		t.Fatalf("%q", text)
 	}
 }
 
-func TestQueuedShowsRelay(t *testing.T) {
-	var out, stderr bytes.Buffer
-	emitter(false, &out, &stderr)(transfer.Event{Event: "queued", Code: "C0DE", Relay: "https://relay.example.com"})
-	if !strings.Contains(out.String(), "Relay: https://relay.example.com (the receiver must use this same relay)") {
-		t.Fatalf("%q", out.String())
+func TestShareLinks(t *testing.T) {
+	for _, c := range []struct{ link, relay, code string }{
+		{"https://relay.example.com/r#C0DE", "https://relay.example.com", "C0DE"},
+		{"  https://relay.example.com/r/#C0DE\n", "https://relay.example.com", "C0DE"},
+		{"http://203.0.113.10:8787/r#C0DE", "http://203.0.113.10:8787", "C0DE"},
+		{"https://example.com/jand/r#C0DE", "https://example.com/jand", "C0DE"},
+	} {
+		relay, code, ok := transfer.ParseShareLink(c.link)
+		if !ok || relay != c.relay || code != c.code {
+			t.Errorf("%q -> %q %q %v", c.link, relay, code, ok)
+		}
+		if transfer.ShareLink(c.relay, c.code) != strings.TrimSpace(strings.Replace(c.link, "/r/#", "/r#", 1)) {
+			t.Errorf("ShareLink(%q) round trip", c.relay)
+		}
+	}
+	for _, notLink := range []string{"C0DE", "https://relay.example.com/#C0DE", "https://relay.example.com/r", "ftp://x/r#C0DE"} {
+		if _, _, ok := transfer.ParseShareLink(notLink); ok {
+			t.Errorf("%q taken as a link", notLink)
+		}
+	}
+	o := transfer.Options{RelayURL: "https://other.example.com"}
+	if _, err := fromLink("https://relay.example.com/r#C0DE", &o, true); err == nil {
+		t.Error("a --relay that disagrees with the link was accepted")
+	}
+	o = transfer.Options{RelayURL: "https://configured.example.com"}
+	if code, err := fromLink("https://relay.example.com/r#C0DE", &o, false); err != nil || code != "C0DE" || o.RelayURL != "https://relay.example.com" {
+		t.Errorf("link should override the configured relay: %q %q %v", code, o.RelayURL, err)
 	}
 }
 

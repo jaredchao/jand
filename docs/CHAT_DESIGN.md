@@ -78,7 +78,7 @@ Agent 判断达成，是正常的出口；预算耗尽，是 Agent 判断失灵�
 
 ## 超时与上限（Relay 默认值）
 
-- 房间建好后 15 分钟内交接包没人领取：`expired/unclaimed`
+- 房间建好后 35 分钟内交接包没人领取：`expired/unclaimed`（0.4.3 之前为 15 分钟；它比交接包的有效期多 5 分钟）
 - 已领取，但 30 分钟内没有 join 或 decline：`expired/no_decision`
 - 检查点暂停后 30 分钟内没有新目标被接受：`expired/no_decision`
 - 对话中 60 分钟没有任何消息：`expired/idle`

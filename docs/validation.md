@@ -173,3 +173,13 @@
 - `jand uninstall`：先列出删除 / 修改 / 保留，默认先打包历史（对话记录与页面、配置、流程、安装记录；不含对话状态中的密钥与访问令牌），再确认（默认否）后执行。只删 jand 认得的条目，`JAND_HOME` 里别的文件不动；收到的文件默认保留，选择删除时先打进备份包；收到文件的目录若是家目录、其上级或根目录，一律不提供删除；用户自己提供的令牌文件保留；`settings.json` 只删规则，若是 setup 为此新建且删完为空则整个删除；Codex 只删标记段。Windows 上提示手动删除程序和 PATH 项。
 - 测试：卸载后备份包内容恰为对话记录、页面、配置和安装记录，不含密钥与令牌；程序、jand 目录中的条目、skill、setup 的备份都被删除；`settings.json` 保留原有设置与规则、只少 jand 的那条；Codex 文件恢复原样；收到的文件默认保留、选择删除时进入备份包；`JAND_HOME` 中的外来文件与被误设为收件目录的家目录不受影响；`--dry-run` 不改任何东西；setup 新建的 `settings.json` 卸载后不残留。测试先抓到一处错误：用户用 `--token-file` 提供的令牌文件被当作 jand 的文件删除，已改为保留。
 - 用编译好的程序在临时 HOME 中实走 setup → version → uninstall：卸载后只剩历史备份包（以及原本就会存在的父目录）。
+
+### 以 Agent 为界面的易用性（毛仔：「实际使用时基本不手敲命令，都是让 Agent 执行」）
+
+- 接收链接：`queued` 带 `link`（`https://<relay>/r#<接收码>`）与 `expires_in`；接收、`chat join`、`chat decline` 都接受链接，从中取 Relay 地址，接收方不必事先配置；与 `--relay` 不一致时报错。Relay 新增 `/r` 说明页（浏览器打开链接时看到如何交给 Agent、如何安装；`#` 之后的接收码不会发到服务器）和 `/` 纯文本说明。实测：接收方不配置 Relay、只用链接领取成功，Relay 日志中不含接收码。
+- 有效期：交接包默认 30 分钟（原 10 分钟），对话邀请 35 分钟（原 15 分钟），因为接收码要经过人手转发。上传成功的 201 响应带 `X-Handoff-Expires-In`，客户端据此显示有效期，不再写死。
+- `chat watch --notify`：macOS 用 `osascript`、Linux 用 `notify-send` 弹系统通知。AppleScript 字符串转义单独测试（含引号、反斜杠、注入尝试，经 `osascript` 原样返回）。AGENT.md 轮询方式改为由 Agent 在对话开始时于后台启动 `watch --notify`，人不必自己敲命令。
+- AGENT.md 新增「向用户汇报」：交出链接、收到交接包、用户问进度（先看 `chat log`）、检查点、结束后打开 `chat view` 时各怎么说。
+- README 与 QUICKSTART 增加「让 Agent 帮你装」的现成说法（安装脚本 + `setup --yes`）。
+- `chat list` 默认隐藏一周前已结束或状态不明的对话，`--all` 显示全部；它的读者多半是 Agent，旧条目只是白占上下文。
+- 不做：`view` / `watch` 不带对话 ID 时默认取最近的对话——Agent 手里总有 ID。

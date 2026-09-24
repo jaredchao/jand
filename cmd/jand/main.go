@@ -167,9 +167,29 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if sender {
 		err = transfer.Send(ctx, fs.Arg(0), o)
 	} else {
-		_, err = transfer.Receive(ctx, fs.Arg(0), o)
+		rawCode, lerr := fromLink(fs.Arg(0), &o, set["relay"])
+		if lerr != nil {
+			fmt.Fprintln(stderr, lerr)
+			return 2
+		}
+		_, err = transfer.Receive(ctx, rawCode, o)
 	}
 	return exitCode(ctx, err, emit)
+}
+
+// fromLink takes the relay and code out of a share link, so a receiver
+// needs no relay configured. A --relay that disagrees with the link is an
+// error rather than a silent choice; anything but a link passes unchanged.
+func fromLink(arg string, o *transfer.Options, relayFlag bool) (string, error) {
+	relay, rawCode, ok := transfer.ParseShareLink(arg)
+	if !ok {
+		return arg, nil
+	}
+	if relayFlag && strings.TrimRight(o.RelayURL, "/") != relay {
+		return "", fmt.Errorf("the link is for relay %s but --relay says %s; drop --relay", relay, o.RelayURL)
+	}
+	o.RelayURL = relay
+	return rawCode, nil
 }
 
 // protectCodes lets a code that begins with '-' (issued by 0.2.x senders)
@@ -211,14 +231,16 @@ func emitter(jsonOutput bool, out, stderr io.Writer) func(transfer.Event) {
 		}
 		switch e.Event {
 		case "queued":
+			expiry := "the relay's time limit"
+			if e.ExpiresIn > 0 {
+				expiry = fmt.Sprintf("%d minutes", (e.ExpiresIn+59)/60)
+			}
+			fmt.Fprintf(out, "Link: %s\n  -> Give this link to the other side; it holds the relay and the one-time code. Claim within %s.\n", e.Link, expiry)
+			fmt.Fprintf(out, "Code: %s  (the code alone also works, with relay %s)\n", e.Code, e.Relay)
 			if e.Chat == "" {
-				fmt.Fprintf(out, "Code: %s\nRelay: %s (the receiver must use this same relay)\nEncrypted transfer queued in relay RAM (expires in 10 minutes).\n", e.Code, e.Relay)
 				return
 			}
-			// Both ids are printed; say plainly which one goes to the peer. The
-			// chat id has been sent by mistake more than once.
-			fmt.Fprintf(out, "Code: %s\n  -> Give this receive code to the other side. It must be claimed within 10 minutes.\n", e.Code)
-			fmt.Fprintf(out, "Relay: %s\n  -> The other side must use this same relay.\n", e.Relay)
+			// The chat id has been sent to the peer by mistake more than once.
 			fmt.Fprintf(out, "Chat: %s\n  -> Your own chat id for later commands. Do not send it to the other side; it cannot be used to join.\n", e.Chat)
 			fmt.Fprintf(out, "Wait for the receiver: jand chat recv --wait 30m %s\n", e.Chat[:8])
 		case "saved":

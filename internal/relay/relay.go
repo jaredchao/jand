@@ -93,9 +93,11 @@ func (r *Relay) refuse(w http.ResponseWriter, room, what string) {
 var ChatFeatures = []string{"goal", "budget", "kinds", "done", "checkpoint", "closing_notes", "charter", "done_rule_any"}
 
 func DefaultConfig() Config {
-	return Config{MaxSessions: 128, MaxStoredBytes: 64 * 1024 * 1024, TTL: 10 * time.Minute, UploadTimeout: 2 * time.Minute,
+	// A receive code passes through people (chat apps, a colleague in a
+	// meeting), so it lives 30 minutes; a chat invitation outlives its packet.
+	return Config{MaxSessions: 128, MaxStoredBytes: 64 * 1024 * 1024, TTL: 30 * time.Minute, UploadTimeout: 2 * time.Minute,
 		MaxChats: 64, MaxChatBytes: 16 * 1024 * 1024, ChatMaxMessages: 200, ChatDefaultBudget: 40,
-		ChatInviteTTL: 15 * time.Minute, ChatDecideTTL: 30 * time.Minute, ChatIdleTTL: 60 * time.Minute,
+		ChatInviteTTL: 35 * time.Minute, ChatDecideTTL: 30 * time.Minute, ChatIdleTTL: 60 * time.Minute,
 		ChatLifetime: 6 * time.Hour, ChatEndedTTL: 10 * time.Minute, ChatMaxWait: 20 * time.Second,
 		ChatPauseNotes: 3}
 }
@@ -225,6 +227,14 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, "jand relay %s\nIt passes end-to-end encrypted handoffs and chats between jand clients; it cannot read them.\nHealth: /healthz\n", r.config.Version)
 		return
 	}
+	if (req.URL.Path == "/r" || req.URL.Path == "/r/") && (req.Method == http.MethodGet || req.Method == http.MethodHead) {
+		// Where a share link lands when someone opens it in a browser. The
+		// code after # never reaches the server, so this page cannot show it.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+		io.WriteString(w, linkPage)
+		return
+	}
 	if req.URL.Path == "/healthz" && req.Method == http.MethodGet {
 		// Body added so an operator can tell a live process from a stale proxy
 		// cache or a listener that accepts but no longer serves, and which
@@ -349,6 +359,7 @@ func (r *Relay) put(w http.ResponseWriter, req *http.Request, room string) {
 	active, stored := r.levelsLocked()
 	r.log.Info("stored", "room", tag(room), "bytes", len(body), "ttl", r.config.TTL,
 		"active", active, "stored_total", stored)
+	w.Header().Set("X-Handoff-Expires-In", strconv.Itoa(int(r.config.TTL/time.Second)))
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -431,3 +442,22 @@ func stringLength(n int) string {
 	// strconv.Itoa is kept here to keep response construction explicit.
 	return strconv.Itoa(n)
 }
+
+const linkPage = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jand 接收链接</title>
+<style>
+body{margin:0;font:16px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Noto Sans CJK SC",sans-serif;background:#f5f6f8;color:#1d2330}
+main{max-width:640px;margin:0 auto;padding:32px 16px}
+.card{background:#fff;border:1px solid #e2e5eb;border-radius:10px;padding:16px 20px;margin:16px 0}
+code{background:#eef0f3;border-radius:4px;padding:1px 5px;font-size:14px;word-break:break-all}
+@media (prefers-color-scheme:dark){body{background:#14171c;color:#e6e8ec}.card{background:#1c2027;border-color:#2c323c}code{background:#232831}}
+</style></head><body><main>
+<h1>这是一个 jand 接收链接</h1>
+<p>有人通过 jand 给你发来了一个任务交接。内容是端到端加密的，这个页面看不到，也不会记录链接里 # 后面的部分。</p>
+<div class="card"><b>已经装了 jand</b><br>把浏览器地址栏里的<b>完整链接</b>发给你的 AI Agent，说「用 jand 收一下」。它会先把内容讲给你听，你同意了才动手。</div>
+<div class="card"><b>还没装</b><br>对你的 Agent 说：「帮我安装 jand，然后用它收下这个链接」，再把完整链接发给它。<br>
+自己装：macOS / Linux 运行 <code>curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | sh</code>，Windows 运行 <code>irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex</code>。</div>
+<p>链接只能用一次，并且有有效期（默认 30 分钟）。过期了请让对方重新发。</p>
+</main></body></html>
+`
