@@ -110,3 +110,12 @@
 - AGENT.md 补充 Claude Code 放行 jand 的写法（`permissions.allow` 中的 `Bash(路径:*)`），并强调放行不改变「不可信、先问用户」的契约。
 - `go test -race`、`go vet`、`make smoke`（18 项）、`compat_smoke.py` 通过。
 - 发布后，毛仔用 Release 中的 `jand-0.4.1-relay-deploy.zip` 重新部署公网 Relay。`/healthz` 返回 `"version":"0.4.1"` 与完整的 `chat_features`，公网 `chat_smoke.py`（13 项）与 `remote_smoke.py` 通过。`feat/chat` 已合入 main 并删除；此后新功能从 main 切分支开发，完成后合回并删除分支。
+
+## 0.4.1 之后：Agent 干活中途被后台 recv 唤醒的时机
+
+2026-09-24，同一台机器上两个 Claude Code 会话，经公网 Relay（0.4.1）对话，两个目标，各自记录时间戳。发起方后台挂 `chat recv --wait 30m --wake request,reply,delivery`，前台连续干活。
+
+- 连续几个短的前台调用（每个 8–13 秒）：接收方 08:47:19 发的 progress 没有唤醒发起方；08:47:45 发的 request 让后台 `recv` 同一秒退出，通知在当时那个前台调用 08:47:50 返回后立刻送到，排在下一个动作之前，不用等整轮结束。
+- 单个长的前台调用（`go test -count=14`，08:57:31–08:58:58）：request 08:58:07 发出，`recv` 同一秒退出，但通知直到 08:58:58 这个调用结束才送到，压了约 51 秒，中途不会插进来。
+- 结论：宿主只在两个工具调用之间送来后台通知，响应延迟的上限等于当时那个前台调用剩下的时长。AGENT.md「协作」一节据此补充：耗时任务放到后台跑，或者拆成短的调用。接收方一侧同样受自身调用节奏影响（它记录的收到时刻比发出时刻晚 0–7 秒）。
+- 另发现：第一个目标进入检查点后，用户以为对话已经结束、需要新的接收码；接收方也没有重新挂 `recv`，所以收不到新提议。AGENT.md 补充：检查点只是暂停，问用户的同时要把 `recv` 挂回去。
