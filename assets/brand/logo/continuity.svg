@@ -1,0 +1,11 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="02 / CONTINUITY / vector mark">
+<path id="Vector" d="M27 48H62C75 48 83 57 83 69V91C83 103 92 112 105 112H134" stroke="#152529" stroke-width="15" stroke-linecap="square"/>
+<path id="Vector_2" d="M27 112H60" stroke="#E77855" stroke-width="15" stroke-linecap="square"/>
+<path id="Vector_3" d="M79 121C83.9706 121 88 116.971 88 112C88 107.029 83.9706 103 79 103C74.0294 103 70 107.029 70 112C70 116.971 74.0294 121 79 121Z" fill="#E77855"/>
+<g id="Vector_4">
+<path d="M128 39V57Z" fill="black"/>
+<path d="M128 39V57" stroke="#E77855" stroke-width="15" stroke-linecap="square"/>
+</g>
+</g>
+</svg>

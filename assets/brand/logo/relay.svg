@@ -1,0 +1,11 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="01 / RELAY / vector mark">
+<path id="Vector" d="M56 28H39C30 28 23 35 23 44V116C23 125 30 132 39 132H56" stroke="#152529" stroke-width="13" stroke-linecap="square"/>
+<path id="Vector_2" d="M104 28H121C130 28 137 35 137 44V116C137 125 130 132 121 132H104" stroke="#152529" stroke-width="13" stroke-linecap="square"/>
+<g id="Vector_3">
+<path d="M60 80H93Z" fill="black"/>
+<path d="M60 80H93" stroke="#12A99F" stroke-width="13" stroke-linecap="square"/>
+</g>
+<path id="Vector_4" d="M84 62L103 80L84 98" stroke="#12A99F" stroke-width="13"/>
+</g>
+</svg>
