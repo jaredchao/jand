@@ -198,3 +198,4 @@
 
 - 兼容：用真实 0.4.1 程序（`~/go/bin/jand`）与 0.4.3 在 0.4.3 Relay 上互为发起方与接收方，邀请、加入、request/reply、双方 done、`all_done` 检查点均正常；`compat_smoke.py` 新旧四种组合交接均 `delivered`。0.4.3 客户端经公网 0.4.1 Relay 的交接与对话，由 Ubuntu 冷启动实测覆盖。
 - `go test -race`、`go vet`、`make smoke`（交接 5 项、对话 14 项）通过。
+- 部署后（毛仔用 `jand-0.4.3-relay-deploy.zip` 升级公网 Relay）：`/healthz` 返回 `"version":"0.4.3"`、`"access":false`；`/` 返回说明文字；`/r` 返回说明页（200，text/html）；用 0.4.3 客户端经公网发送，`expires_in` 为 1800，接收方不配置 Relay、只凭链接领取成功；公网 `chat_smoke.py`（14 项）与 `remote_smoke.py` 通过。发行包 6 个归档校验通过，macOS 版签名并公证（`spctl`：Notarized Developer ID），全部归档与其中的程序均不含真实域名或 IP。
