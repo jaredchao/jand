@@ -39,6 +39,9 @@ See what happened (local record only; nothing is fetched from the relay):
                                                new entries as your side sends and receives
   jand chat view [--out FILE] [--no-open] <chat>
                                                write the timeline as one HTML page and open it
+  jand chat watch <chat>                       for the person, in their own terminal: rings when
+                                               the peer sent something your agent has not read yet
+                                               (it only looks; the agent still receives everything)
 
 Message kinds (--kind): note (default), progress (no answer expected),
 request (expects an answer), reply (needs --reply-to), delivery (something is
@@ -84,7 +87,7 @@ func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
 		return 0
 	}
 	sub := args[0]
-	if sub == "list" || sub == "log" || sub == "view" {
+	if sub == "list" || sub == "log" || sub == "view" || sub == "watch" {
 		return history(ctx, sub, args[1:], out, stderr)
 	}
 	fs := flag.NewFlagSet("jand chat "+sub, flag.ContinueOnError)

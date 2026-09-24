@@ -110,8 +110,10 @@ def agent_doc(windows, relay):
     exe = r".\jand.exe" if windows else "./jand"
     text = (ROOT / "docs/AGENT.md").read_text(encoding="utf-8")
     text = re.sub(r"<!-- packaging-note-start -->.*?<!-- packaging-note-end -->\n\n?", "", text, flags=re.DOTALL)
+    # A package serves any agent: keep both ways of waiting and the package-only notes, drop the markers.
+    text = re.sub(r"^<!-- (mode:\w+|/mode|release-only|/release-only) -->\n", "", text, flags=re.MULTILINE)
     text = text.replace("__RELAY_URL__", relay).replace("__JAND__", exe)
-    if "__RELAY_URL__" in text or "__JAND__" in text or "packaging-note" in text:
+    if "__RELAY_URL__" in text or "__JAND__" in text or "packaging-note" in text or "<!--" in text:
         raise RuntimeError("AGENT.md still contains packaging placeholders after rendering")
     return text
 

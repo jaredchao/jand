@@ -29,6 +29,9 @@ type clientConfig struct {
 		DefaultBudget   int      `json:"default_budget,omitempty"`
 		RecvWake        []string `json:"recv_wake,omitempty"`
 		DefaultWorkflow string   `json:"default_workflow,omitempty"`
+		// WakeMode says how this machine's agent waits for chat events:
+		// background or poll. jand guide prints only that way; empty prints both.
+		WakeMode string `json:"wake_mode,omitempty"`
 	} `json:"chat"`
 }
 
@@ -53,6 +56,9 @@ func loadClientConfig() (clientConfig, error) {
 	}
 	if c.Chat.DefaultBudget < 0 || c.Chat.DefaultBudget > transfer.MaxChatBudget {
 		return c, fmt.Errorf("%s: chat.default_budget must be between 1 and %d", clientConfigPath(), transfer.MaxChatBudget)
+	}
+	if c.Chat.WakeMode != "" && !slices.Contains(wakeModes, c.Chat.WakeMode) {
+		return c, fmt.Errorf("%s: chat.wake_mode must be background or poll", clientConfigPath())
 	}
 	for _, k := range c.Chat.RecvWake {
 		if !slices.Contains(transfer.MessageKinds, k) {
@@ -128,6 +134,7 @@ func configCommand(args []string, out, stderr io.Writer) int {
 		"default_budget":   c.Chat.DefaultBudget,
 		"recv_wake":        c.Chat.RecvWake,
 		"default_workflow": c.Chat.DefaultWorkflow,
+		"wake_mode":        c.Chat.WakeMode,
 	}
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")

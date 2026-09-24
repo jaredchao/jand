@@ -35,7 +35,9 @@ func usage(w io.Writer) {
   jand send [options] <file>
   jand [options] <code>
   jand chat <join|decline|send|recv|done|checkpoint|propose|accept|close> ...
+  jand chat <list|log|view> ...   see what happened in a chat
                    (see jand chat --help)
+  jand guide             print the guide for agents, filled in for this machine
   jand config [--json]   show the effective client configuration and its sources
   jand relay [--listen 127.0.0.1:8787] [--config relay.json] [--print-config]
 
@@ -76,6 +78,9 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	}
 	if args[0] == "config" {
 		return configCommand(args[1:], out, stderr)
+	}
+	if args[0] == "guide" {
+		return guideCommand(args[1:], out, stderr)
 	}
 	sender := args[0] == "send"
 	if sender {

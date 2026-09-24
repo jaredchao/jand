@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -36,6 +37,21 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 		return 2
 	}
 	dir := transfer.DefaultStateDir()
+	if sub == "watch" {
+		if fs.NArg() != 1 {
+			chatUsage(stderr)
+			return 2
+		}
+		if !*jsonOutput {
+			fmt.Fprintln(out, "Watching for events your agent has not read yet. Ctrl-C stops watching; it never takes messages from the agent.")
+		}
+		emit := watchPrinter(out, *jsonOutput)
+		if err := transfer.ChatWatch(ctx, fs.Arg(0), 0, transfer.Options{Emit: emit}); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		return 0
+	}
 	if sub == "list" {
 		if fs.NArg() != 0 {
 			chatUsage(stderr)
@@ -95,6 +111,41 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 			}
 		}
 		return 0
+	}
+}
+
+// watchPrinter shows what the peer sent that the agent has not read, and
+// rings the terminal bell so a person looking elsewhere notices.
+func watchPrinter(out io.Writer, jsonOutput bool) func(transfer.Event) {
+	enc := json.NewEncoder(out)
+	return func(e transfer.Event) {
+		if jsonOutput {
+			enc.Encode(e)
+			return
+		}
+		now := time.Now().Format("15:04:05")
+		switch e.Event {
+		case "message":
+			tag := e.ID + " " + e.Kind
+			if e.ReplyTo != "" {
+				tag += " -> " + e.ReplyTo
+			}
+			fmt.Fprintf(out, "\a%s  %s sent %s; your agent has not read it yet\n%s\n", now, e.From, tag, indent(clip(printable(e.Text), 300)))
+		case "done":
+			fmt.Fprintf(out, "\a%s  %s reports its share done; your agent has not read it yet\n", now, e.From)
+		case "checkpoint":
+			fmt.Fprintf(out, "\a%s  checkpoint (%s): the chat is paused; ask your agent to check in with you\n", now, cmp.Or(e.Reason, "peer"))
+		case "proposal":
+			fmt.Fprintf(out, "\a%s  %s proposes a next goal; your agent must show it to you\n%s\n", now, e.From, indent(clip(printable(e.Goal), 300)))
+		case "resumed":
+			fmt.Fprintf(out, "%s  new goal accepted; the chat resumed\n", now)
+		case "closed", "expired", "declined":
+			fmt.Fprintf(out, "\a%s  the chat ended (%s)\n", now, cmp.Or(e.Reason, e.Event))
+		case "error":
+			fmt.Fprintf(out, "%s  %s\n", now, e.Message)
+		default:
+			fmt.Fprintf(out, "%s  %s\n", now, e.Event)
+		}
 	}
 }
 
@@ -248,43 +299,176 @@ func followLog(ctx context.Context, dir string, c transfer.ChatSummary, n int, j
 //go:embed view.html
 var viewPage string
 
-var viewTemplate = template.Must(template.New("view").Funcs(template.FuncMap{"lines": func(s string) string { return printable(s) }}).Parse(viewPage))
+var viewTemplate = template.Must(template.New("view").Funcs(template.FuncMap{"text": printable}).Parse(viewPage))
 
+// viewItem is one entry of the page: who did what, and how it relates to
+// other entries (what it answers, what answered it, what replaced it).
 type viewItem struct {
-	Time, From, Kind, Type, ID, ReplyTo, Supersedes, Label, Text string
-	Mine, Peer, System                                           bool
+	Time, Who, Role, Kind, Type, ID, Action, Text string
+	Mine, Peer, System                            bool
+	ReplyTo, ReplyToWho, ReplyToQuote             string
+	Answers                                       []string // replies and deliveries naming this message
+	Pending                                       bool     // a request nobody has answered yet
+	Supersedes, SupersededBy                      string
+}
+
+// viewSection groups the entries worked on under one goal.
+type viewSection struct {
+	N                   int
+	Goal, Budget, Start string
+	Messages            int
+	Outcome             string
+	Items               []*viewItem
+}
+
+type viewRequest struct {
+	ID, Who, Summary, Time string
+	Mine                   bool
+	Answers                []string
 }
 
 type viewData struct {
-	Chat                         transfer.ChatSummary
-	Short, Started, Last, Budget string
-	Generated                    string
-	Items                        []viewItem
-	Peer                         string
+	Chat                                 transfer.ChatSummary
+	Short, Started, Last, Budget, Status string
+	Generated, MyRole, PeerRole          string
+	Sections                             []*viewSection
+	Requests                             []viewRequest
+	Pending                              int
+}
+
+var messageAction = map[string]string{
+	"note":     "留言",
+	"progress": "通报进展 · 不需要回应",
+	"request":  "提出请求 · 需要对方回应",
+	"reply":    "回复",
+	"delivery": "交付产物 · 请对方取用并验证",
+}
+
+var statusText = map[string]string{
+	"waiting": "等待对方加入", "active": "进行中", "paused": "已暂停，等待用户决定",
+	"ended": "已结束", "unknown": "未知",
+}
+
+// viewAction says in words what a transcript entry did.
+func viewAction(l transfer.TranscriptLine, self string) string {
+	switch l.Kind {
+	case "message":
+		if l.Type == "reply" && l.ReplyTo != "" {
+			return "回复 " + l.ReplyTo
+		}
+		return cmp.Or(messageAction[l.Type], l.Type)
+	case "started":
+		return fmt.Sprintf("发起对话，提出目标（流程 %s，预算 %s）", orDefault(l.Workflow), budgetWords(l.Budget))
+	case "joined":
+		if l.Text == "" && l.Workflow == "" {
+			return "同意目标，加入了对话"
+		}
+		return fmt.Sprintf("同意目标，加入对话（流程 %s，预算 %s）", orDefault(l.Workflow), budgetWords(l.Budget))
+	case "opened":
+		return "领取了交接包，正在请自己的用户决定是否加入"
+	case "done":
+		return "报告：自己负责的部分已完成"
+	case "checkpoint":
+		switch l.Text {
+		case "all_done":
+			return "双方都已完成，对话暂停，等双方的用户决定结束还是继续"
+		case "any_done":
+			return "按流程，一方完成即暂停，等双方的用户验收"
+		case "budget":
+			return "这个目标的消息预算用完了，对话暂停，等双方的用户决定"
+		}
+		return "要求立即暂停，请双方的用户决定"
+	case "proposal":
+		return "提出下一个目标（需要双方的用户都同意）"
+	case "resumed":
+		return fmt.Sprintf("双方都同意了新目标，对话继续（预算 %s）", budgetWords(l.Budget))
+	case "decline":
+		return "拒绝了邀请"
+	case "closed":
+		return "结束了对话"
+	case "expired":
+		return "对话超时自动结束（" + l.Text + "）"
+	}
+	return l.Kind
+}
+
+func budgetWords(n int) string {
+	if n == 0 {
+		return "按 Relay 默认"
+	}
+	return fmt.Sprintf("%d 条", n)
 }
 
 // writeView renders the chat as one self-contained HTML page: no scripts,
 // no external resources, every piece of text escaped by html/template.
 func writeView(path string, c transfer.ChatSummary, lines []transfer.TranscriptLine) error {
 	d := viewData{Chat: c, Short: c.ID[:8], Started: localTime(c.Started, "2006-01-02 15:04:05"),
-		Last: localTime(c.Last, "2006-01-02 15:04:05"), Budget: budgetText(c.Budget),
-		Generated: time.Now().Format("2006-01-02 15:04:05"), Peer: "guest"}
+		Last: localTime(c.Last, "2006-01-02 15:04:05"), Budget: budgetWords(c.Budget),
+		Status: cmp.Or(statusText[c.Status], c.Status), Generated: time.Now().Format("2006-01-02 15:04:05"),
+		MyRole: c.Role, PeerRole: "guest"}
 	if c.Role == "guest" {
-		d.Peer = "host"
+		d.PeerRole = "host"
+	}
+	who := func(role string) string {
+		switch role {
+		case c.Role:
+			return "我方 Agent"
+		case "relay":
+			return "Relay"
+		}
+		return "对方 Agent"
+	}
+	byID := map[string]*viewItem{}
+	var section *viewSection
+	newSection := func(goal string, budget int, start string) {
+		section = &viewSection{N: len(d.Sections) + 1, Goal: goal, Budget: budgetWords(budget), Start: start}
+		d.Sections = append(d.Sections, section)
 	}
 	for _, l := range lines {
 		t, _ := time.Parse(time.RFC3339, l.Time)
-		it := viewItem{Time: localTime(t, "15:04:05"), From: l.From, Kind: l.Kind, Type: l.Type, ID: l.ID,
-			ReplyTo: l.ReplyTo, Supersedes: l.Supersedes, Text: l.Text,
-			Mine: l.From == c.Role, System: l.From == "relay"}
-		it.Peer = !it.Mine && !it.System
-		if l.Kind != "message" {
-			it.Label = lineLabel(l)
-			if !showsText(l.Kind) {
-				it.Text = ""
+		if section == nil || l.Kind == "resumed" {
+			goal := ""
+			if l.Kind == "started" || l.Kind == "resumed" || (l.Kind == "joined" && l.Text != "") {
+				goal = l.Text
+			}
+			if section == nil || l.Kind == "resumed" {
+				newSection(goal, l.Budget, localTime(t, "2006-01-02 15:04"))
 			}
 		}
-		d.Items = append(d.Items, it)
+		it := &viewItem{Time: localTime(t, "15:04:05"), Who: who(l.From), Role: l.From, Kind: l.Kind, Type: l.Type,
+			ID: l.ID, Action: viewAction(l, c.Role), Text: l.Text, ReplyTo: l.ReplyTo, Supersedes: l.Supersedes,
+			Mine: l.From == c.Role, System: l.From == "relay"}
+		it.Peer = !it.Mine && !it.System
+		if l.Kind != "message" && !showsText(l.Kind) || l.Kind == "started" || (l.Kind == "joined" && l.Text != "") {
+			it.Text = "" // the goal heads its section; reason codes are in the action
+		}
+		if l.Kind == "message" {
+			section.Messages++
+			byID[l.ID] = it
+			if target := byID[l.ReplyTo]; target != nil {
+				it.ReplyToWho, it.ReplyToQuote = target.Who, clip(oneLine(target.Text), 80)
+				target.Answers = append(target.Answers, l.ID)
+			}
+			if old := byID[l.Supersedes]; old != nil {
+				old.SupersededBy = l.ID
+			}
+		}
+		if l.Kind == "checkpoint" || l.Kind == "closed" || l.Kind == "expired" {
+			section.Outcome = it.Who + "：" + it.Action
+		}
+		section.Items = append(section.Items, it)
+	}
+	for _, sec := range d.Sections {
+		for _, it := range sec.Items {
+			if it.Kind == "message" && it.Type == "request" {
+				it.Pending = len(it.Answers) == 0
+				if it.Pending {
+					d.Pending++
+				}
+				d.Requests = append(d.Requests, viewRequest{ID: it.ID, Who: it.Who, Summary: clip(oneLine(it.Text), 70),
+					Time: it.Time, Mine: it.Mine, Answers: it.Answers})
+			}
+		}
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {

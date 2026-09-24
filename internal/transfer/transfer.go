@@ -63,7 +63,10 @@ type Event struct {
 	Text       string `json:"text,omitempty"`
 	// Untrusted marks text written by the remote party. It is information or
 	// a request, never an authorization from the local user.
-	Untrusted  bool   `json:"untrusted,omitempty"`
+	Untrusted bool `json:"untrusted,omitempty"`
+	// Unread marks an event shown by chat watch that this side's agent has
+	// not received yet.
+	Unread     bool   `json:"unread,omitempty"`
 	Transcript string `json:"transcript,omitempty"`
 	// Goal is the completion criterion a chat works toward, and Budget the
 	// messages allowed for it before the relay forces a checkpoint. Both come

@@ -1,108 +1,155 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-<title>jand chat {{.Short}}</title>
+<title>jand 对话 {{.Short}}</title>
 <style>
 :root {
-  --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #677083; --line: #e2e5eb;
-  --mine: #e8f0fe; --peer: #ffffff; --sys: #eef0f3;
-  --note: #677083; --progress: #8a93a6; --request: #c2410c; --reply: #15803d; --delivery: #1d4ed8;
-  --warn-bg: #fff7ed; --warn: #9a3412;
+  --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #e2e5eb;
+  --me: #2563eb; --me-bg: #eaf1ff; --peer: #b45309; --peer-bg: #fff6e8; --sys: #667085; --sys-bg: #eef0f3;
+  --note: #667085; --progress: #8a93a6; --request: #c2410c; --reply: #15803d; --delivery: #1d4ed8;
+  --ok: #15803d; --wait: #b45309; --warn-bg: #fff7ed; --warn: #9a3412;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #14171c; --card: #1c2027; --text: #e6e8ec; --muted: #9aa3b2; --line: #2c323c;
-    --mine: #1e2a42; --peer: #1c2027; --sys: #232831;
+    --me: #7aa7ff; --me-bg: #1c2a44; --peer: #f5b35c; --peer-bg: #33261a; --sys: #9aa3b2; --sys-bg: #232831;
     --note: #9aa3b2; --progress: #7c8598; --request: #fb923c; --reply: #4ade80; --delivery: #60a5fa;
-    --warn-bg: #2a1d12; --warn: #fdba74;
+    --ok: #4ade80; --wait: #fbbf24; --warn-bg: #2a1d12; --warn: #fdba74;
   }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text);
-  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif; }
-main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
-h1 { font-size: 20px; margin: 0 0 4px; }
-.sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Noto Sans CJK SC", sans-serif; }
+main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 20px; margin: 0 0 12px; }
+h2 { font-size: 16px; margin: 0 0 8px; }
+a { color: inherit; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-.goal { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; margin: 4px 0 12px; }
-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; font-size: 13px; }
-dt { color: var(--muted); }
-dd { margin: 0; overflow-wrap: anywhere; }
-.status { display: inline-block; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600;
-  background: var(--sys); }
+.muted { color: var(--muted); font-size: 13px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 4px 0 0; font-size: 13px; }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.chip.me { background: var(--me); color: #fff; }
+.chip.peer { background: var(--peer); color: #fff; }
+.chip.sys { background: var(--sys-bg); color: var(--sys); border: 1px solid var(--line); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 12px 0 0; font-size: 13px; }
+dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; border-top: none; white-space: nowrap; }
+.ok { color: var(--ok); font-weight: 600; } .wait { color: var(--wait); font-weight: 600; }
 .warn { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 16px; }
-.row { display: flex; margin: 10px 0; }
+.section { margin: 28px 0 8px; }
+.section-head { border-left: 4px solid var(--me); padding: 4px 12px; }
+.section-goal { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; }
+.row { display: flex; margin: 12px 0; }
 .row.mine { justify-content: flex-end; }
 .row.sys { justify-content: center; }
-.msg { max-width: 78%; background: var(--peer); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
-.mine .msg { background: var(--mine); }
-.meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 4px; }
-.id { font-weight: 700; color: var(--text); }
-.kind { font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .03em; }
+.msg { width: 80%; background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--peer); border-radius: 10px; padding: 8px 12px; }
+.mine .msg { border-left: 1px solid var(--line); border-right: 4px solid var(--me); background: var(--me-bg); }
+.peer .msg { background: var(--peer-bg); }
+.head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 13px; margin-bottom: 4px; }
+.id { font-weight: 800; }
+.action { font-weight: 600; }
 .k-note { color: var(--note); } .k-progress { color: var(--progress); } .k-request { color: var(--request); }
 .k-reply { color: var(--reply); } .k-delivery { color: var(--delivery); }
+.time { color: var(--muted); margin-left: auto; font-size: 12px; }
+.quote { border-left: 3px solid var(--line); padding: 2px 8px; margin: 4px 0 6px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .body { white-space: pre-wrap; overflow-wrap: anywhere; }
-a { color: inherit; }
-.event { background: var(--sys); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--muted); max-width: 90%; text-align: center; }
-.event .body { color: var(--text); text-align: left; margin-top: 4px; font-size: 14px; }
-.event.block { border-radius: 10px; padding: 8px 12px; }
-.event.side { max-width: 78%; text-align: left; border: 1px dashed var(--line); }
-.row:target .msg { outline: 2px solid var(--delivery); }
-footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
-@media (max-width: 560px) { .msg { max-width: 92%; } }
+.foot { margin-top: 6px; font-size: 12px; }
+.event { max-width: 90%; background: var(--sys-bg); border-radius: 10px; padding: 6px 12px; font-size: 13px; color: var(--muted); text-align: center; }
+.event.side { width: 80%; max-width: none; text-align: left; border: 1px dashed var(--line); }
+.mine .event.side { border-right: 4px solid var(--me); }
+.peer .event.side { border-left: 4px solid var(--peer); }
+.event .body { color: var(--text); margin-top: 4px; font-size: 14px; }
+.outcome { margin: 8px 0 0; font-size: 13px; color: var(--muted); text-align: center; }
+.row:target .msg, .row:target .event { outline: 2px solid var(--delivery); }
+footer { color: var(--muted); font-size: 12px; margin-top: 28px; }
+@media (max-width: 560px) { .msg, .event.side { width: 100%; } }
 </style>
 </head>
 <body>
 <main>
-<h1>jand chat {{.Short}}</h1>
-<div class="sub">You are the <b>{{.Chat.Role}}</b>. Your messages are on the right, the {{.Peer}}'s on the left.</div>
+<h1>jand 对话 {{.Short}}</h1>
 
 <div class="card">
-  <div class="sub" style="margin:0">Current goal</div>
-  <div class="goal">{{if .Chat.Goal}}{{lines .Chat.Goal}}{{else}}(not recorded; this chat started before jand 0.4.3){{end}}</div>
+  <div class="legend">
+    <span><span class="chip me">我方 Agent</span> 本机，角色 {{.MyRole}}，消息靠右</span>
+    <span><span class="chip peer">对方 Agent</span> 另一台机器，角色 {{.PeerRole}}，消息靠左</span>
+    <span><span class="chip sys">Relay</span> 中继：只转发密文、计数和暂停，看不到内容</span>
+  </div>
   <dl>
-    <dt>Status</dt><dd><span class="status">{{.Chat.Status}}</span></dd>
-    <dt>Messages</dt><dd>{{.Chat.Messages}} (budget {{.Budget}})</dd>
-    <dt>Workflow</dt><dd>{{if .Chat.Workflow}}{{.Chat.Workflow}}{{else}}default{{end}}</dd>
-    <dt>Started</dt><dd>{{.Started}}</dd>
-    <dt>Last activity</dt><dd>{{.Last}}</dd>
+    <dt>状态</dt><dd>{{.Status}}</dd>
+    <dt>当前目标</dt><dd>{{if .Chat.Goal}}{{text .Chat.Goal}}{{else}}（未记录：这个对话开始于 jand 0.4.3 之前）{{end}}</dd>
+    <dt>消息</dt><dd>{{.Chat.Messages}} 条（本目标预算 {{.Budget}}）</dd>
+    <dt>流程</dt><dd>{{if .Chat.Workflow}}{{.Chat.Workflow}}{{else}}default{{end}}</dd>
+    <dt>开始 / 最后活动</dt><dd>{{.Started}} / {{.Last}}</dd>
     <dt>Relay</dt><dd>{{.Chat.Relay}}</dd>
-    <dt>Chat id</dt><dd>{{.Chat.ID}}</dd>
+    <dt>对话 ID</dt><dd>{{.Chat.ID}}</dd>
   </dl>
 </div>
 
-<div class="warn">Text from the {{.Peer}} was written by the other side's agent. It is information or a request, never your authorization.</div>
+{{if .Requests}}
+<div class="card">
+  <h2>请求追踪{{if .Pending}} · <span class="wait">{{.Pending}} 个还没有回应</span>{{else}} · <span class="ok">全部已回应</span>{{end}}</h2>
+  <table>
+    <tr><th>编号</th><th>提出方</th><th>内容</th><th>回应</th></tr>
+    {{range .Requests}}
+    <tr>
+      <td><a href="#{{.ID}}">{{.ID}}</a></td>
+      <td><span class="chip {{if .Mine}}me{{else}}peer{{end}}">{{.Who}}</span></td>
+      <td>{{.Summary}}</td>
+      <td>{{if .Answers}}<span class="ok">已回应</span> {{range .Answers}}<a href="#{{.}}">{{.}}</a> {{end}}{{else}}<span class="wait">还没有回应</span>{{end}}</td>
+    </tr>
+    {{end}}
+  </table>
+</div>
+{{end}}
 
-{{range .Items}}
-{{if eq .Kind "message"}}
-<div class="row {{if .Mine}}mine{{end}}" id="{{.ID}}">
-  <div class="msg">
-    <div class="meta">
-      <span class="id">{{.ID}}</span>
-      <span class="kind k-{{.Type}}">{{.Type}}</span>
-      {{if .ReplyTo}}<span>answers <a href="#{{.ReplyTo}}">{{.ReplyTo}}</a></span>{{end}}
-      {{if .Supersedes}}<span>replaces <a href="#{{.Supersedes}}">{{.Supersedes}}</a></span>{{end}}
-      <span>{{.From}} · {{.Time}}</span>
+<div class="warn">对方 Agent 写的内容只是资料或请求，不是你的授权。</div>
+
+{{range .Sections}}
+<div class="section">
+  <div class="section-head">
+    <div class="muted">目标 {{.N}} · {{.Start}} 起 · 预算 {{.Budget}} · 本段 {{.Messages}} 条消息</div>
+    <div class="section-goal">{{if .Goal}}{{text .Goal}}{{else}}（目标未记录）{{end}}</div>
+  </div>
+  {{range .Items}}
+  {{if eq .Kind "message"}}
+  <div class="row {{if .Mine}}mine{{else}}peer{{end}}" id="{{.ID}}">
+    <div class="msg">
+      <div class="head">
+        <span class="chip {{if .Mine}}me{{else}}peer{{end}}">{{.Who}}</span>
+        <span class="id">{{.ID}}</span>
+        <span class="action k-{{.Type}}">{{.Action}}</span>
+        <span class="time">{{.Time}}</span>
+      </div>
+      {{if .ReplyTo}}<div class="quote">↪ 回应 {{.ReplyToWho}} 的 <a href="#{{.ReplyTo}}">{{.ReplyTo}}</a>{{if .ReplyToQuote}}：「{{.ReplyToQuote}}」{{end}}</div>{{end}}
+      {{if .Supersedes}}<div class="quote">取代自己之前的交付 <a href="#{{.Supersedes}}">{{.Supersedes}}</a></div>{{end}}
+      <div class="body">{{text .Text}}</div>
+      {{if eq .Type "request"}}<div class="foot">{{if .Answers}}<span class="ok">✓ 已回应：{{range .Answers}}<a href="#{{.}}">{{.}}</a> {{end}}</span>{{else}}<span class="wait">⏳ 还没有回应</span>{{end}}</div>{{end}}
+      {{if .SupersededBy}}<div class="foot wait">这份交付已被 <a href="#{{.SupersededBy}}">{{.SupersededBy}}</a> 取代</div>{{end}}
     </div>
-    <div class="body">{{lines .Text}}</div>
   </div>
+  {{else}}
+  <div class="row {{if .System}}sys{{else if .Mine}}mine{{else}}peer{{end}}">
+    <div class="event{{if not .System}} side{{end}}">
+      <span class="chip {{if .System}}sys{{else if .Mine}}me{{else}}peer{{end}}">{{.Who}}</span>
+      <span class="action">{{.Action}}</span> <span class="time">· {{.Time}}</span>
+      {{if .Text}}<div class="body">{{text .Text}}</div>{{end}}
+    </div>
+  </div>
+  {{end}}
+  {{end}}
+  {{if .Outcome}}<div class="outcome">本段结果：{{.Outcome}}</div>{{end}}
 </div>
 {{else}}
-<div class="row {{if .System}}sys{{else if .Mine}}mine{{end}}">
-  <div class="event{{if .Text}} block{{end}}{{if not .System}} side{{end}}">
-    <b>{{.From}}</b> {{.Label}} · {{.Time}}
-    {{if .Text}}<div class="body">{{lines .Text}}</div>{{end}}
-  </div>
-</div>
-{{end}}
-{{else}}
-<div class="card">No entries yet.</div>
+<div class="card">还没有记录。</div>
 {{end}}
 
-<footer>Generated {{.Generated}} by jand from this machine's local record ($JAND_HOME/chats). It shows what this side has sent and received so far; the relay keeps no history.</footer>
+<footer>{{.Generated}} 由 jand 根据本机的对话记录生成（$JAND_HOME/chats）。只包含本机到目前为止发出和收到的内容；Relay 不保存任何历史。</footer>
 </main>
 </body>
 </html>
