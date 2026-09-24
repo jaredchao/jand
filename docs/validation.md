@@ -133,7 +133,7 @@
 - 访问令牌测试：配置解析与 `--print-config` 回读；不带令牌或令牌错误时交接与建房都返回 401，带对令牌可以发送，接收方不带令牌照常领取；客户端令牌来源的优先级与空文件报错；`/healthz` 默认 `access:false`。把 Relay 的检查改成永远放行后端到端测试失败，确认测试确实覆盖了检查。真实程序实测：本机 Relay 开启令牌，不带令牌发送得到 `HTTP 401: this relay requires an access token; set JAND_ACCESS_TOKEN`，环境变量与令牌文件两种方式都能发交接和对话，接收方不带令牌领取成功；Relay 日志只有一行 WARN，不含令牌。
 - 检查点提示写进程序输出：唤醒时机实测中，用户和接收方 Agent 都把检查点当成了对话结束。只改 AGENT.md 不够，Agent 用 `--json` 看不到文本输出。现在每个 `checkpoint` 事件（自己发起、对方发起、Relay 触发）都带 `message`：对话只是暂停，结束用 `chat close`，继续用 `chat propose`，不需要新码，其间保持 `recv` 才能收到对方的提议；文本输出打印这段话，再附上带对话 ID 的两条命令。单元测试覆盖对方发起与 Relay 触发两种，`chat_smoke` 检查 `all_done` 检查点的 `message`。
 
-## 0.4.3（开发中）：看得见对话经过
+## 0.4.3：看得见对话经过、傻瓜化安装、token 优化
 
 毛仔反馈：对话全程由 Agent 在命令行里进行，人只能靠 Agent 事后的总结知道发生了什么。决定不做 GUI，而是从本机已有的对话记录生成可读的视图；数据只用本地文件，不引入数据库，Relay 继续不保存任何历史。
 
@@ -193,3 +193,8 @@
 - `chat log --brief`：每条一行、正文截到 100 字；AGENT.md「用户问进度」改用它。Ubuntu 那次对话 6,915 → 857 字符。
 - 消息写短：协作规矩里写明各类消息的篇幅，大段内容用 delivery / `--file`。
 - 不做：长消息自动存文件（毛仔：交付物要仔细看）；精简 JSON 字段（省得少、改接口）。
+
+### 0.4.3 发布前
+
+- 兼容：用真实 0.4.1 程序（`~/go/bin/jand`）与 0.4.3 在 0.4.3 Relay 上互为发起方与接收方，邀请、加入、request/reply、双方 done、`all_done` 检查点均正常；`compat_smoke.py` 新旧四种组合交接均 `delivered`。0.4.3 客户端经公网 0.4.1 Relay 的交接与对话，由 Ubuntu 冷启动实测覆盖。
+- `go test -race`、`go vet`、`make smoke`（交接 5 项、对话 14 项）通过。
