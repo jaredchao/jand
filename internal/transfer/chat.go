@@ -555,7 +555,7 @@ func ChatJoin(ctx context.Context, rawCode string, opts Options) (string, error)
 	if _, err := os.Stat(s.path(o.StateDir, ".transcript.jsonl")); err != nil {
 		s.writeRecord(o.StateDir, TranscriptLine{From: "guest", Kind: "joined", Text: terms.Goal, Budget: terms.Budget, Workflow: w.Name})
 	}
-	o.Emit(Event{Event: "joined", Chat: s.ID, Transcript: s.path(o.StateDir, ".transcript.jsonl"), Workflow: s.Workflow})
+	o.Emit(Event{Event: "joined", Chat: s.ID, Transcript: s.path(o.StateDir, ".transcript.jsonl"), Workflow: s.Workflow, Guide: "chat"})
 	return s.ID, nil
 }
 

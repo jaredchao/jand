@@ -89,3 +89,14 @@ func TestAppleScriptQuoting(t *testing.T) {
 		}
 	}
 }
+
+func TestLogBriefIsOneLinePerEntry(t *testing.T) {
+	var out bytes.Buffer
+	long := strings.Repeat("很长的报告内容。", 100)
+	printBrief(&out, "host", transfer.TranscriptLine{Time: "2026-09-24T01:00:00Z", From: "guest", Kind: "message", ID: "g1", Type: "delivery", Text: long + "\n第二行"})
+	printBrief(&out, "host", transfer.TranscriptLine{Time: "2026-09-24T01:01:00Z", From: "host", Kind: "message", ID: "h1", Type: "reply", ReplyTo: "g1", Text: "收到"})
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	if len(lines) != 2 || len([]rune(lines[0])) > 140 || !strings.Contains(lines[0], "g1 delivery: ") || !strings.Contains(lines[1], "host* h1 reply->g1: 收到") {
+		t.Fatalf("%q", out.String())
+	}
+}

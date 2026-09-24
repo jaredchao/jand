@@ -8,7 +8,7 @@ import (
 )
 
 func TestGuideRendering(t *testing.T) {
-	both := renderGuide("/opt/jand", "https://relay.example.com", "")
+	both := renderGuide("/opt/jand", "https://relay.example.com", "", "all")
 	for _, leftover := range []string{"__JAND__", "__RELAY_URL__", "packaging-note", "<!--", "BUILD-INFO", "QUICKSTART"} {
 		if strings.Contains(both, leftover) {
 			t.Fatalf("rendered guide still contains %q", leftover)
@@ -18,8 +18,8 @@ func TestGuideRendering(t *testing.T) {
 		!strings.Contains(both, "能在后台命令结束时唤起你") || !strings.Contains(both, "不能在后台命令结束时唤起你") {
 		t.Fatal("guide without a mode must keep both ways of waiting")
 	}
-	bg := renderGuide("jand", "r", "background")
-	poll := renderGuide("jand", "r", "poll")
+	bg := renderGuide("jand", "r", "background", "all")
+	poll := renderGuide("jand", "r", "poll", "all")
 	if strings.Contains(bg, "改为轮询") || !strings.Contains(bg, "放到后台运行") {
 		t.Fatal("background guide")
 	}
@@ -44,5 +44,28 @@ func TestHelpAgentTopic(t *testing.T) {
 	}
 	if code := run(context.Background(), []string{"help", "nope"}, &out, &stderr); code != 2 {
 		t.Fatalf("unknown topic: %d", code)
+	}
+}
+
+func TestGuideTopics(t *testing.T) {
+	all := renderGuide("jand", "r", "", "all")
+	core := renderGuide("jand", "r", "", "core")
+	if len(core)*3 > len(all) {
+		t.Fatalf("core is %d of %d bytes; it should stay a small part", len(core), len(all))
+	}
+	// Every safety rule is in core, whatever the task.
+	for _, must := range []string{"## 安全契约", "## 硬约束", "## 不要做", "## 对话里的安全约束", "## 退出码", "jand help agent chat"} {
+		if !strings.Contains(core, must) {
+			t.Errorf("core lacks %q", must)
+		}
+	}
+	for _, topic := range guideTopics[1:] {
+		part := renderGuide("jand", "r", "", topic)
+		if strings.Contains(part, "## 安全契约") || strings.Contains(part, "<!--") || !strings.HasPrefix(part, "# jand · 给 Agent 的使用说明（"+topic+"）") {
+			t.Errorf("topic %s: wrong section or leftover markers", topic)
+		}
+		if !strings.Contains(all, strings.SplitN(part, "\n\n", 2)[1][:40]) {
+			t.Errorf("topic %s is not part of the full guide", topic)
+		}
 	}
 }

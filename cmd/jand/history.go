@@ -30,6 +30,7 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 	fs.Usage = func() {}
 	jsonOutput := fs.Bool("json", false, "JSON output")
 	follow := fs.Bool("follow", false, "log: keep printing new entries")
+	brief := fs.Bool("brief", false, "log: one line per entry, text clipped")
 	outPath := fs.String("out", "", "view: write the page here")
 	noOpen := fs.Bool("no-open", false, "view: do not open a browser")
 	notify := fs.Bool("notify", false, "watch: also show a desktop notification")
@@ -108,6 +109,11 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 			enc := json.NewEncoder(out)
 			for _, l := range lines {
 				enc.Encode(l)
+			}
+		} else if *brief {
+			printBriefHeader(out, summary)
+			for _, l := range lines {
+				printBrief(out, summary.Role, l)
 			}
 		} else {
 			printHeader(out, summary)
@@ -271,6 +277,31 @@ func printLine(out io.Writer, self string, l transfer.TranscriptLine) {
 // repeats the proposal just before it.
 func showsText(kind string) bool {
 	return kind != "checkpoint" && kind != "expired" && kind != "resumed"
+}
+
+// printBriefHeader and printBrief are log --brief: what an agent reads to
+// answer "how is it going", a line per entry instead of every full text.
+func printBriefHeader(out io.Writer, c transfer.ChatSummary) {
+	fmt.Fprintf(out, "chat %s  you=%s  %s  %d msgs  goal: %s\n", c.ID[:8], c.Role, c.Status, c.Messages, clip(oneLine(c.Goal), 80))
+}
+
+func printBrief(out io.Writer, self string, l transfer.TranscriptLine) {
+	t, _ := time.Parse(time.RFC3339, l.Time)
+	who := l.From
+	if who == self {
+		who += "*"
+	}
+	what := lineLabel(l)
+	if l.Kind == "message" {
+		what = l.ID + " " + l.Type
+		if l.ReplyTo != "" {
+			what += "->" + l.ReplyTo
+		}
+		what += ": " + clip(oneLine(l.Text), 100)
+	} else if l.Kind == "done" && l.Text != "" {
+		what += ": " + clip(oneLine(l.Text), 100)
+	}
+	fmt.Fprintf(out, "%s %s %s\n", localTime(t, "15:04"), who, what)
 }
 
 // lineLabel says in words what a non-message transcript line means.

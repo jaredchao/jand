@@ -58,6 +58,9 @@ type Event struct {
 	// ExpiresIn is how many seconds the relay keeps the ciphertext; 0 when
 	// the relay does not say (before 0.4.3).
 	ExpiresIn int `json:"expires_in,omitempty"`
+	// Guide names the section of jand help agent to read before going on,
+	// so an agent reads the long chat rules only when a chat starts.
+	Guide string `json:"guide,omitempty"`
 
 	// Chat fields. Chat is the local chat id; ChatInvite marks a received
 	// packet whose sender asked for a chat, which is a request, not consent.
@@ -359,7 +362,7 @@ func Send(ctx context.Context, filename string, opts Options) error {
 	queued := Event{Event: "queued", Code: c.String(), Relay: o.RelayURL, Link: ShareLink(o.RelayURL, c.String()),
 		ExpiresIn: expires, SHA256: digest, Size: int64(len(data))}
 	if chat != nil {
-		queued.Chat = chat.ID
+		queued.Chat, queued.Guide = chat.ID, "chat"
 	}
 	o.Emit(queued)
 	if o.WaitTimeout <= 0 {
@@ -449,7 +452,7 @@ func Receive(ctx context.Context, rawCode string, opts Options) (string, error) 
 		// Only reports that the packet was claimed; joining needs the user.
 		reportOpened(ctx, c, o)
 		// No chat id here: joining takes the code, and joined returns the id.
-		saved.ChatInvite, saved.Goal, saved.Budget = true, meta.Goal, meta.Budget
+		saved.ChatInvite, saved.Goal, saved.Budget, saved.Guide = true, meta.Goal, meta.Budget, "chat"
 		// The workflow and the budget the relay actually enforces come from
 		// the charter. A charter that fails its checks is reported, not
 		// hidden: the user should not join that chat.

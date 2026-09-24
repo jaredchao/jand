@@ -36,7 +36,8 @@ func chatUsage(w io.Writer) {
 See what happened (local record only; nothing is fetched from the relay):
   jand chat list [--all]                       chats on this machine: status, goal, last activity
                                                (--all: also those that ended over a week ago)
-  jand chat log [--follow] <chat>              timeline in the terminal; --follow keeps printing
+  jand chat log [--brief] [--follow] <chat>    timeline in the terminal; --brief: a line per entry;
+                                               --follow keeps printing
                                                new entries as your side sends and receives
   jand chat view [--out FILE] [--no-open] <chat>
                                                write the timeline as one HTML page and open it
