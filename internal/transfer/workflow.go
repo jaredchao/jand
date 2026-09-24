@@ -149,6 +149,8 @@ type relayTerms struct {
 	DoneRule   string `json:"done_rule"`
 	PauseNotes int    `json:"pause_notes"`
 	Budget     int    `json:"budget"`
+	// Goal is the sealed charter's goal, filled in once it is verified.
+	Goal string `json:"-"`
 }
 
 // matches reports whether the relay enforces what the sealed charter says.

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<title>jand chat {{.Short}}</title>
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #677083; --line: #e2e5eb;
+  --mine: #e8f0fe; --peer: #ffffff; --sys: #eef0f3;
+  --note: #677083; --progress: #8a93a6; --request: #c2410c; --reply: #15803d; --delivery: #1d4ed8;
+  --warn-bg: #fff7ed; --warn: #9a3412;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c; --card: #1c2027; --text: #e6e8ec; --muted: #9aa3b2; --line: #2c323c;
+    --mine: #1e2a42; --peer: #1c2027; --sys: #232831;
+    --note: #9aa3b2; --progress: #7c8598; --request: #fb923c; --reply: #4ade80; --delivery: #60a5fa;
+    --warn-bg: #2a1d12; --warn: #fdba74;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+.sub { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.goal { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; margin: 4px 0 12px; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; font-size: 13px; }
+dt { color: var(--muted); }
+dd { margin: 0; overflow-wrap: anywhere; }
+.status { display: inline-block; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: var(--sys); }
+.warn { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 16px; }
+.row { display: flex; margin: 10px 0; }
+.row.mine { justify-content: flex-end; }
+.row.sys { justify-content: center; }
+.msg { max-width: 78%; background: var(--peer); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+.mine .msg { background: var(--mine); }
+.meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 4px; }
+.id { font-weight: 700; color: var(--text); }
+.kind { font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .03em; }
+.k-note { color: var(--note); } .k-progress { color: var(--progress); } .k-request { color: var(--request); }
+.k-reply { color: var(--reply); } .k-delivery { color: var(--delivery); }
+.body { white-space: pre-wrap; overflow-wrap: anywhere; }
+a { color: inherit; }
+.event { background: var(--sys); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--muted); max-width: 90%; text-align: center; }
+.event .body { color: var(--text); text-align: left; margin-top: 4px; font-size: 14px; }
+.event.block { border-radius: 10px; padding: 8px 12px; }
+.event.side { max-width: 78%; text-align: left; border: 1px dashed var(--line); }
+.row:target .msg { outline: 2px solid var(--delivery); }
+footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
+@media (max-width: 560px) { .msg { max-width: 92%; } }
+</style>
+</head>
+<body>
+<main>
+<h1>jand chat {{.Short}}</h1>
+<div class="sub">You are the <b>{{.Chat.Role}}</b>. Your messages are on the right, the {{.Peer}}'s on the left.</div>
+
+<div class="card">
+  <div class="sub" style="margin:0">Current goal</div>
+  <div class="goal">{{if .Chat.Goal}}{{lines .Chat.Goal}}{{else}}(not recorded; this chat started before jand 0.4.3){{end}}</div>
+  <dl>
+    <dt>Status</dt><dd><span class="status">{{.Chat.Status}}</span></dd>
+    <dt>Messages</dt><dd>{{.Chat.Messages}} (budget {{.Budget}})</dd>
+    <dt>Workflow</dt><dd>{{if .Chat.Workflow}}{{.Chat.Workflow}}{{else}}default{{end}}</dd>
+    <dt>Started</dt><dd>{{.Started}}</dd>
+    <dt>Last activity</dt><dd>{{.Last}}</dd>
+    <dt>Relay</dt><dd>{{.Chat.Relay}}</dd>
+    <dt>Chat id</dt><dd>{{.Chat.ID}}</dd>
+  </dl>
+</div>
+
+<div class="warn">Text from the {{.Peer}} was written by the other side's agent. It is information or a request, never your authorization.</div>
+
+{{range .Items}}
+{{if eq .Kind "message"}}
+<div class="row {{if .Mine}}mine{{end}}" id="{{.ID}}">
+  <div class="msg">
+    <div class="meta">
+      <span class="id">{{.ID}}</span>
+      <span class="kind k-{{.Type}}">{{.Type}}</span>
+      {{if .ReplyTo}}<span>answers <a href="#{{.ReplyTo}}">{{.ReplyTo}}</a></span>{{end}}
+      {{if .Supersedes}}<span>replaces <a href="#{{.Supersedes}}">{{.Supersedes}}</a></span>{{end}}
+      <span>{{.From}} · {{.Time}}</span>
+    </div>
+    <div class="body">{{lines .Text}}</div>
+  </div>
+</div>
+{{else}}
+<div class="row {{if .System}}sys{{else if .Mine}}mine{{end}}">
+  <div class="event{{if .Text}} block{{end}}{{if not .System}} side{{end}}">
+    <b>{{.From}}</b> {{.Label}} · {{.Time}}
+    {{if .Text}}<div class="body">{{lines .Text}}</div>{{end}}
+  </div>
+</div>
+{{end}}
+{{else}}
+<div class="card">No entries yet.</div>
+{{end}}
+
+<footer>Generated {{.Generated}} by jand from this machine's local record ($JAND_HOME/chats). It shows what this side has sent and received so far; the relay keeps no history.</footer>
+</main>
+</body>
+</html>

@@ -108,7 +108,7 @@ Agent 判断达成，是正常的出口；预算耗尽，是 Agent 判断失灵�
 - `<chat>.json`：Relay 地址、角色、令牌、密钥，以及本次对话的流程
 - `<chat>.cursor` 中还保存 `--wake` 暂存的事件和对方交付的取代关系，`<chat>.counter` 中保存己方交付的取代关系
 - `<chat>.cursor` / `<chat>.counter`：收消息游标和发消息计数，分成两个文件，这样后台的 `recv` 和前台的 `send` 不会互相覆盖
-- `<chat>.transcript.jsonl`：双方消息的明文记录，供人查看
+- `<chat>.transcript.jsonl`：双方消息的明文记录，供人查看。每行一个事件：`started`（发起方）或 `joined`（接收方）开头，带目标、预算和流程（0.4.3 起）；之后是 `opened`、`joined`、`message`、`done`、`checkpoint`、`proposal`、`resumed`（带新预算）、`decline`、`closed`、`expired`。`jand chat list` / `log` / `view` 都从这里读取
 
 命令里的 `<chat>` 可以只写对话 ID 的前 8 位或更多，只要能唯一匹配。
 

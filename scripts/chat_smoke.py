@@ -139,13 +139,25 @@ def main():
 
             transcript = (host / "chats" / f"{chat}.transcript.jsonl").read_text(encoding="utf-8").splitlines()
             kinds = [json.loads(line)["kind"] for line in transcript]
-            assert kinds == ["message", "message", "message", "message", "message", "message", "done", "done", "checkpoint",
+            assert kinds == ["started", "opened", "joined",
+                             "message", "message", "message", "message", "message", "message", "done", "done", "checkpoint",
                              "message", "proposal", "resumed",
                              "checkpoint", "proposal", "resumed", "closed"], kinds
+
+            # What a person sees: the list and the page, from the same record.
+            listed = [json.loads(line) for line in jand(host, "chat", "list", "--json").stdout.splitlines()]
+            first = next(c for c in listed if c["chat"] == chat)
+            assert first["status"] == "ended" and first["messages"] == 7 and first["role"] == "host", first
+            page = root / "view.html"
+            viewed = jand(host, "chat", "view", "--no-open", "--out", str(page), chat[:8])
+            assert viewed.returncode == 0 and page.exists(), viewed.stderr
+            state = json.loads((host / "chats" / f"{chat}.json").read_text(encoding="utf-8"))
+            html = page.read_text(encoding="utf-8")
+            assert "对齐 /users 响应字段" in html and state["token"] not in html and state["key"] not in html
             print(json.dumps({"invite_and_join": "passed", "background_recv_woken_by_peer": f"passed ({woke:.2f}s)",
                               "progress_held_until_request": "passed", "reply_to": "passed", "both_done_pauses": "passed", "unread_blocks_exit_5": "passed", "supersedes": "passed", "closing_note_after_pause": "passed", "workflow_review_any_done": "passed",
                               "stdin_message": "passed", "checkpoint_propose_accept": "passed",
-                              "close_and_exit_code_4": "passed", "transcript": "passed"}, indent=2))
+                              "close_and_exit_code_4": "passed", "transcript": "passed", "list_and_view": "passed"}, indent=2))
     finally:
         if relay is not None:
             relay.terminate()

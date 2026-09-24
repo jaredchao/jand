@@ -404,6 +404,7 @@ func createChat(ctx context.Context, c code.Code, o Options) (*chatState, error)
 	if err = writeJSONFile(s.path(o.StateDir, ".json"), s); err != nil {
 		return nil, fmt.Errorf("cannot save chat state: %w", err)
 	}
+	s.writeRecord(o.StateDir, TranscriptLine{From: "host", Kind: "started", Text: o.Goal, Budget: o.Budget, Workflow: w.Name})
 	// An older relay ignores the terms it does not know. That is harmless
 	// for the default workflow and wrong for any other, so check.
 	if _, _, err := readCharter(ctx, c, o.RelayURL, host, o.Goal); err != nil {
@@ -463,6 +464,7 @@ func readCharter(ctx context.Context, c code.Code, relay, token, goal string) (W
 	if err := ch.matches(t); err != nil {
 		return Workflow{}, t, err
 	}
+	t.Goal = ch.Goal
 	return ch.Workflow, t, nil
 }
 
@@ -477,6 +479,7 @@ func (s *chatState) abandon(o Options) {
 		resp.Body.Close()
 	}
 	os.Remove(s.path(o.StateDir, ".json"))
+	os.Remove(s.path(o.StateDir, ".transcript.jsonl"))
 }
 
 // reportOpened tells the host the packet was claimed. It is best effort: a
@@ -502,7 +505,7 @@ func ChatJoin(ctx context.Context, rawCode string, opts Options) (string, error)
 	// the user is agreeing to.
 	// The goal was compared with the packet when it was received; joining
 	// has no packet, so that one comparison is skipped here.
-	w, _, err := readCharter(ctx, c, o.RelayURL, c.Token("chat/invite"), "")
+	w, terms, err := readCharter(ctx, c, o.RelayURL, c.Token("chat/invite"), "")
 	if err != nil && !errors.Is(err, errNoCharter) {
 		return "", fmt.Errorf("not joining: %w", err)
 	}
@@ -548,6 +551,10 @@ func ChatJoin(ctx context.Context, rawCode string, opts Options) (string, error)
 		return "", chatError(resp)
 	}
 	resp.Body.Close()
+	// A retried join finds the line already written.
+	if _, err := os.Stat(s.path(o.StateDir, ".transcript.jsonl")); err != nil {
+		s.writeRecord(o.StateDir, TranscriptLine{From: "guest", Kind: "joined", Text: terms.Goal, Budget: terms.Budget, Workflow: w.Name})
+	}
 	o.Emit(Event{Event: "joined", Chat: s.ID, Transcript: s.path(o.StateDir, ".transcript.jsonl"), Workflow: s.Workflow})
 	return s.ID, nil
 }
@@ -582,7 +589,11 @@ func ChatDecline(ctx context.Context, rawCode, reason string, opts Options) erro
 	return nil
 }
 
-type transcriptLine struct {
+// TranscriptLine is one entry of a chat's local record, written by this side
+// as events are sent or received. Kinds: started (host) and joined (guest)
+// open it with the goal; then message, done, checkpoint, proposal, resumed,
+// opened, decline, closed, expired. Text in lines from the peer is untrusted.
+type TranscriptLine struct {
 	Time    string `json:"time"`
 	From    string `json:"from"`
 	Kind    string `json:"kind"`
@@ -592,17 +603,20 @@ type transcriptLine struct {
 	// Supersedes is the delivery this one replaces.
 	Supersedes string `json:"supersedes,omitempty"`
 	Text       string `json:"text,omitempty"`
+	// Budget and Workflow describe the goal on started and joined lines.
+	Budget   int    `json:"budget,omitempty"`
+	Workflow string `json:"workflow,omitempty"`
 }
 
 func (s *chatState) record(dir, from, kind, text string) {
-	s.writeRecord(dir, transcriptLine{From: from, Kind: kind, Text: text})
+	s.writeRecord(dir, TranscriptLine{From: from, Kind: kind, Text: text})
 }
 
 func (s *chatState) recordMessage(dir, from, id string, m ChatMessage) {
-	s.writeRecord(dir, transcriptLine{From: from, Kind: "message", ID: id, Type: m.Kind, ReplyTo: m.ReplyTo, Supersedes: m.Supersedes, Text: m.Text})
+	s.writeRecord(dir, TranscriptLine{From: from, Kind: "message", ID: id, Type: m.Kind, ReplyTo: m.ReplyTo, Supersedes: m.Supersedes, Text: m.Text})
 }
 
-func (s *chatState) writeRecord(dir string, l transcriptLine) {
+func (s *chatState) writeRecord(dir string, l TranscriptLine) {
 	l.Time = time.Now().UTC().Format(time.RFC3339)
 	line, _ := json.Marshal(l)
 	f, err := os.OpenFile(s.path(dir, ".transcript.jsonl"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
@@ -1059,6 +1073,7 @@ func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relay
 			return fail("unexpected " + e.Type + " event from relay")
 		}
 		out.Event = e.Type
+		s.record(dir, "guest", e.Type, "")
 	case "expired":
 		out.Event, out.Reason = "expired", e.Reason
 		s.record(dir, "relay", "expired", e.Reason)
@@ -1120,7 +1135,7 @@ func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relay
 		if e.From == s.Role {
 			out.By = "self"
 		}
-		s.record(dir, "relay", "resumed", goal)
+		s.writeRecord(dir, TranscriptLine{From: "relay", Kind: "resumed", Text: goal, Budget: e.Budget})
 	case "message", "declined":
 		kind := "message"
 		if e.Type == "declined" {

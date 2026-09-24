@@ -144,7 +144,8 @@ func TestChatConversation(t *testing.T) {
 		t.Fatalf("send after end: %v", err)
 	}
 	transcript, err := os.ReadFile(host.o.StateDir + "/" + id + ".transcript.jsonl")
-	if err != nil || strings.Count(string(transcript), "\n") != 3 || !strings.Contains(string(transcript), "[{id, name}]") {
+	if err != nil || strings.Count(string(transcript), "\n") != 6 || !strings.Contains(string(transcript), "[{id, name}]") ||
+		!strings.HasPrefix(string(transcript), `{"time":`) || !strings.Contains(strings.SplitN(string(transcript), "\n", 2)[0], `"kind":"started","text":"双方对 /users 响应字段达成一致"`) {
 		t.Fatalf("transcript: %q %v", transcript, err)
 	}
 	if info, err := os.Stat(host.o.StateDir + "/" + id + ".json"); err != nil || info.Mode().Perm() != 0600 {

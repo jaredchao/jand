@@ -33,6 +33,13 @@ func chatUsage(w io.Writer) {
   jand chat accept <chat>                      accept the peer's proposal; the chat resumes
   jand chat close <chat>                       end the chat now, for both sides
 
+See what happened (local record only; nothing is fetched from the relay):
+  jand chat list                               chats on this machine: status, goal, last activity
+  jand chat log [--follow] <chat>              timeline in the terminal; --follow keeps printing
+                                               new entries as your side sends and receives
+  jand chat view [--out FILE] [--no-open] <chat>
+                                               write the timeline as one HTML page and open it
+
 Message kinds (--kind): note (default), progress (no answer expected),
 request (expects an answer), reply (needs --reply-to), delivery (something is
 ready). Every message gets an id such as h3 (host's 3rd) or g2; --reply-to
@@ -77,6 +84,9 @@ func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
 		return 0
 	}
 	sub := args[0]
+	if sub == "list" || sub == "log" || sub == "view" {
+		return history(ctx, sub, args[1:], out, stderr)
+	}
 	fs := flag.NewFlagSet("jand chat "+sub, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {}

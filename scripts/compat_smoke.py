@@ -7,8 +7,10 @@ Build the old binary from a released tag or commit first. Every pairing
 a new --chat sender must still reach an old receiver as a plain handoff."""
 import hashlib
 import json
+import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,8 +18,13 @@ import tempfile
 from smoke import BIN, first_line
 
 
+# Chat state goes to a throwaway JAND_HOME, never the user's own.
+HOME = tempfile.mkdtemp(prefix="jand-compat-home-")
+
+
 def jand(binary, *args):
-    result = subprocess.run([str(binary), *args], capture_output=True, text=True, timeout=30)
+    env = dict(os.environ, JAND_HOME=HOME)
+    result = subprocess.run([str(binary), *args], capture_output=True, text=True, timeout=30, env=env)
     return result
 
 
@@ -66,6 +73,7 @@ def main():
     finally:
         relay.terminate()
         relay.wait(timeout=5)
+        shutil.rmtree(HOME, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -132,3 +132,14 @@
 - 访问令牌（可选，防止 Relay 被当作匿名中转）：Relay 配置 `access.tokens_sha256` 后，新建交接或对话必须带 `X-Jand-Access`；领取、加入、对话消息不检查。客户端从 `JAND_ACCESS_TOKEN` 或 `access_token_file` 读取令牌，只在发送时带上。`/healthz` 新增 `access`，启动日志新增 `access=`。设计取舍见 CONFIG_DESIGN「实现记录（0.4.2）」。
 - 访问令牌测试：配置解析与 `--print-config` 回读；不带令牌或令牌错误时交接与建房都返回 401，带对令牌可以发送，接收方不带令牌照常领取；客户端令牌来源的优先级与空文件报错；`/healthz` 默认 `access:false`。把 Relay 的检查改成永远放行后端到端测试失败，确认测试确实覆盖了检查。真实程序实测：本机 Relay 开启令牌，不带令牌发送得到 `HTTP 401: this relay requires an access token; set JAND_ACCESS_TOKEN`，环境变量与令牌文件两种方式都能发交接和对话，接收方不带令牌领取成功；Relay 日志只有一行 WARN，不含令牌。
 - 检查点提示写进程序输出：唤醒时机实测中，用户和接收方 Agent 都把检查点当成了对话结束。只改 AGENT.md 不够，Agent 用 `--json` 看不到文本输出。现在每个 `checkpoint` 事件（自己发起、对方发起、Relay 触发）都带 `message`：对话只是暂停，结束用 `chat close`，继续用 `chat propose`，不需要新码，其间保持 `recv` 才能收到对方的提议；文本输出打印这段话，再附上带对话 ID 的两条命令。单元测试覆盖对方发起与 Relay 触发两种，`chat_smoke` 检查 `all_done` 检查点的 `message`。
+
+## 0.4.3（开发中）：看得见对话经过
+
+毛仔反馈：对话全程由 Agent 在命令行里进行，人只能靠 Agent 事后的总结知道发生了什么。决定不做 GUI，而是从本机已有的对话记录生成可读的视图；数据只用本地文件，不引入数据库，Relay 继续不保存任何历史。
+
+- 记录补全：发起方建房后写 `started`，接收方加入后写 `joined`，都带目标、预算和流程；发起方收到对方领取、加入时也记一行；`resumed` 带上新预算。建房后交接包没发出去（撤回）时，连同记录一起删除。
+- `jand chat list`：扫描 `$JAND_HOME/chats/`，列出每个对话的状态（waiting / active / paused / ended，旧对话没有记录的为 unknown，用状态文件时间代替）、消息数、最后活动时间和当前目标。
+- `jand chat log [--follow] <chat>`：终端时间线，己方标 `*`，reply 标出回复的是哪条；`--follow` 每秒检查新增记录，对话结束（closed、expired、decline）时退出。
+- `jand chat view <chat>`：用 `html/template` 生成独立 HTML（CSP `default-src 'none'`，无脚本、无外部资源，文件权限 0600），默认写在对话目录并用系统浏览器打开；`--out` 指定位置，`--no-open` 不打开。己方消息靠右、对方靠左，Relay 事件居中；消息类型着色，「answers g2」可点回原消息；浅色与深色两套配色。
+- 测试：对话从 waiting 到 active、paused、ended 的状态变化；接收方记录以带目标的 `joined` 开头；列表的 JSON 中不含对话令牌和密钥；页面把对方写的 `<script>`、`<img onerror>` 转义输出；`log --follow` 在记录出现 closed 后退出。用真实的 0.4.1 公网对话 `cb7fc191` 生成页面，以无头 Chrome 截图检查浅色与深色显示。
+- 发现并修正：`compat_smoke.py` 没有为测试单独设置 `JAND_HOME`，会把测试对话的状态写进使用者真实的对话目录。现在改用临时目录并在结束时删除；修正后跑一遍，真实目录的文件数不变。
