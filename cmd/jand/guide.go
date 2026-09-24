@@ -58,9 +58,11 @@ func selfCommand() string {
 	return self
 }
 
-func guideCommand(args []string, out, stderr io.Writer) int {
-	if len(args) != 0 {
-		fmt.Fprintln(stderr, "usage: jand guide   (prints the guide for agents, filled in for this machine)")
+// helpTopic serves jand help <topic>. The only topic is agent: the guide an
+// agent reads before using jand, which is too long to be the usage text.
+func helpTopic(args []string, out, stderr io.Writer) int {
+	if len(args) != 1 || args[0] != "agent" {
+		fmt.Fprintln(stderr, "usage: jand help [agent]   (agent: the operating guide for agents, filled in for this machine)")
 		return 2
 	}
 	cfg, err := loadClientConfig()

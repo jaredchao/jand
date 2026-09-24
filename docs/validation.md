@@ -143,3 +143,7 @@
 - `jand chat view <chat>`：用 `html/template` 生成独立 HTML（CSP `default-src 'none'`，无脚本、无外部资源，文件权限 0600），默认写在对话目录并用系统浏览器打开；`--out` 指定位置，`--no-open` 不打开。己方消息靠右、对方靠左，Relay 事件居中；消息类型着色，「answers g2」可点回原消息；浅色与深色两套配色。
 - 测试：对话从 waiting 到 active、paused、ended 的状态变化；接收方记录以带目标的 `joined` 开头；列表的 JSON 中不含对话令牌和密钥；页面把对方写的 `<script>`、`<img onerror>` 转义输出；`log --follow` 在记录出现 closed 后退出。用真实的 0.4.1 公网对话 `cb7fc191` 生成页面，以无头 Chrome 截图检查浅色与深色显示。
 - 发现并修正：`compat_smoke.py` 没有为测试单独设置 `JAND_HOME`，会把测试对话的状态写进使用者真实的对话目录。现在改用临时目录并在结束时删除；修正后跑一遍，真实目录的文件数不变。
+- `jand help agent`：AGENT.md 嵌入程序（`docs` 包），运行时替换为本机程序的实际路径（PATH 上找到的正是自己时写 `jand`）和配置的 Relay，去掉只适用于发行包的段落。起初做成独立命令 `jand guide`，毛仔指出应走常规的 `help`；按 `git help <主题>` 的惯例改为 `help` 的主题，`jand help` 仍是简短用法。
+- 等消息的两种方式：AGENT.md 中 `mode:background` 与 `mode:poll` 两段，由本机配置 `chat.wake_mode` 选择；发行包（`release.py`）两段都保留。毛仔指出对方不一定用 Claude Code，而且有的 Agent 没有后台唤醒能力；默认推荐仍是 Claude Code。
+- `jand chat watch`：Relay 会删除 `after` 及之前的事件，所以提醒器若跑到 Agent 前面，会让 Agent 丢消息。实现上每次都从 Agent 的游标文件读取位置、用 `wait=0` 查询（不占每个对话 4 个长轮询名额），本地去重，不写记录、不改游标。测试：提醒器看到对方的 request 后，Agent 的 `recv` 仍然收到同一条；多次轮询不重复提醒；对话关闭后退出。
+- `chat view` 按毛仔的意见改版：中文；「我方 Agent / 对方 Agent / Relay」用颜色与标签区分；每条写明动作；请求追踪表、回复摘录、已回应/未回应、交付取代关系；按目标分段并写明结果。仍用无头 Chrome 截图检查。

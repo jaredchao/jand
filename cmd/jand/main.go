@@ -37,7 +37,8 @@ func usage(w io.Writer) {
   jand chat <join|decline|send|recv|done|checkpoint|propose|accept|close> ...
   jand chat <list|log|view> ...   see what happened in a chat
                    (see jand chat --help)
-  jand guide             print the guide for agents, filled in for this machine
+  jand help agent        the operating guide for agents, filled in for this machine
+                         (give it to your agent: "run jand help agent and follow it")
   jand config [--json]   show the effective client configuration and its sources
   jand relay [--listen 127.0.0.1:8787] [--config relay.json] [--print-config]
 
@@ -63,6 +64,9 @@ The relay keeps ciphertext in RAM for at most 10 minutes.`)
 
 func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
+		if len(args) > 1 {
+			return helpTopic(args[1:], out, stderr)
+		}
 		usage(out)
 		return 0
 	}
@@ -78,9 +82,6 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	}
 	if args[0] == "config" {
 		return configCommand(args[1:], out, stderr)
-	}
-	if args[0] == "guide" {
-		return guideCommand(args[1:], out, stderr)
 	}
 	sender := args[0] == "send"
 	if sender {

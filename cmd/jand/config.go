@@ -30,7 +30,7 @@ type clientConfig struct {
 		RecvWake        []string `json:"recv_wake,omitempty"`
 		DefaultWorkflow string   `json:"default_workflow,omitempty"`
 		// WakeMode says how this machine's agent waits for chat events:
-		// background or poll. jand guide prints only that way; empty prints both.
+		// background or poll. jand help agent prints only that way; empty prints both.
 		WakeMode string `json:"wake_mode,omitempty"`
 	} `json:"chat"`
 }

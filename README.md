@@ -74,13 +74,24 @@ jand chat close <chat>                                            # 任何一方
 ```bash
 jand chat list                  # 本机的对话：状态、目标、消息数、最后活动时间
 jand chat log <chat>            # 终端里的时间线；加 --follow 边看边更新，对话结束时自动退出
-jand chat view <chat>           # 生成一个 HTML 页面并在浏览器打开：己方靠右、对方靠左，回复可点回原消息
+jand chat view <chat>           # 生成中文 HTML 页面并在浏览器打开（见下）
+jand chat watch <chat>          # 在自己的终端里挂着：对方发来 Agent 还没读的消息时响铃提醒
 ```
+
+`view` 页面标明「我方 Agent / 对方 Agent / Relay」，每条写明做了什么；顶部有请求追踪表（每个请求是否已回应、被哪条回应），回复带上被回复内容的摘录，被取代的交付会注明，按目标分段并写明每段的结果。
+
+`watch` 是给宿主不能后台唤醒的 Agent 准备的（见下文「给 Agent 的说明」）：它只看不拿，始终从 Agent 自己的读取位置去看，不会让 Agent 少收任何消息。
 
 - 只读本机的对话记录（`$JAND_HOME/chats/<chat>.transcript.jsonl`），不连 Relay；Relay 不保存任何历史。
 - 记录随己方 jand 的收发增长，所以看到的是「己方到目前为止发出和收到的」。对方还没被 `recv` 取回的消息，这里也还没有。
 - 页面是一个独立文件：不含脚本、不加载外部资源，对方写的文字全部转义；不包含对话的令牌和密钥。
 - 0.4.3 起记录的第一行写下目标、预算和流程；更早的对话没有这一行，页面上目标显示为「未记录」。
+
+### 给 Agent 的说明（0.4.3 起）
+
+`jand help agent` 打印给 Agent 的操作契约（即 [AGENT.md](docs/AGENT.md)），并填好本机程序的实际路径和配置的 Relay。任何能执行命令的 Agent 都能用：在它的全局指令里加一句「使用 jand 前先运行 `jand help agent` 并照做」即可。默认推荐 Claude Code。
+
+Agent 等消息有两种方式，由本机配置 `chat.wake_mode` 决定 `help agent` 给哪一种（不配置时两种都给）：`background`（宿主能在后台命令结束时唤起 Agent，如 Claude Code，推荐）和 `poll`（不能后台唤醒的 Agent：干活间隙用 `recv --wait 0` 查看，结束一轮前必须告诉用户对话还在进行，并建议用户运行 `chat watch`）。
 
 ## 配置
 

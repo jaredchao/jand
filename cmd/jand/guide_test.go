@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"strings"
 	"testing"
 )
@@ -23,5 +25,20 @@ func TestGuideRendering(t *testing.T) {
 	}
 	if strings.Contains(poll, "放到后台运行，处理完事件") || !strings.Contains(poll, "改为轮询") || !strings.Contains(poll, "jand chat watch") {
 		t.Fatal("poll guide")
+	}
+}
+
+func TestHelpAgentTopic(t *testing.T) {
+	t.Setenv("JAND_HOME", t.TempDir())
+	var out, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"help", "agent"}, &out, &stderr); code != 0 || !strings.HasPrefix(out.String(), "# jand · 给 Agent 的使用说明") {
+		t.Fatalf("help agent: %d %q", code, stderr.String())
+	}
+	out.Reset()
+	if code := run(context.Background(), []string{"help"}, &out, &stderr); code != 0 || !strings.Contains(out.String(), "jand help agent") {
+		t.Fatalf("help should point to the agent topic: %q", out.String())
+	}
+	if code := run(context.Background(), []string{"help", "nope"}, &out, &stderr); code != 2 {
+		t.Fatalf("unknown topic: %d", code)
 	}
 }

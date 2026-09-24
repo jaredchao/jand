@@ -8,7 +8,7 @@
 <!-- packaging-note-start -->
 本文件是模板。`make release` 会把 `__RELAY_URL__` 替换为实际 Relay 地址、
 `__JAND__` 替换为对应平台的程序名，并将替换后的副本放入每个发行包，同时删除本段说明。
-`jand guide` 在运行时做同样的替换（用本机程序的实际路径和配置的 Relay），并按本机配置的
+`jand help agent` 在运行时做同样的替换（用本机程序的实际路径和配置的 Relay），并按本机配置的
 `chat.wake_mode` 只保留 `mode:background` 或 `mode:poll` 其中一段（未配置时两段都保留），
 并去掉只适用于发行包的 `release-only` 段。
 <!-- packaging-note-end -->
