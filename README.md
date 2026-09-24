@@ -22,7 +22,21 @@ jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远�
 
 [product-original.md](docs/product-original.md) 是原始需求，[protocol.md](docs/protocol.md) 是旧 0.1 WebSocket 原型的协议，两者只作历史记录。
 
-## 第一次使用（0.4.3 起）
+## 安装与第一次使用（0.4.3 起）
+
+macOS / Linux：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | sh
+```
+
+Windows（PowerShell）：
+
+```powershell
+irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex
+```
+
+安装脚本从 GitHub Release 下载本机对应的包，用发行版的 `SHA256SUMS.txt` 校验，不一致就中止；装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\Programs\jand`，并加入用户 PATH），然后直接运行 `jand setup`。可用 `JAND_VERSION=v0.4.3` 指定版本、`JAND_INSTALL_DIR` 指定位置、`JAND_NO_SETUP=1` 只安装。脚本里不含任何 Relay 地址，地址和令牌都在 `setup` 里填。已经装好的，直接运行：
 
 ```bash
 jand setup
