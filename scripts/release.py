@@ -119,9 +119,18 @@ def agent_doc(windows, relay):
 
 
 def quickstart(windows, relay, signed=False, notarized=False):
+    """The page a person reads first: set up once, then talk to your agent."""
     exe = r".\jand.exe" if windows else "./jand"
     shell = "PowerShell" if windows else "终端"
-    example_note = "203.0.113.10 是示例 IP，必须换成实际地址。" if "203.0.113.10" in relay else ""
+    another = "另开一个 PowerShell 窗口" if windows else "另开一个终端"
+    if "203.0.113.10" in relay:
+        relay_hint = "向搭建 Relay 的人要"
+    else:
+        relay_hint = f"这个包对应的 Relay 是 `{relay}`"
+    if windows:
+        path_note = "想在任何目录直接用 `jand`：运行仓库里的一行安装命令 `irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex`，它会装好并加入 PATH。"
+    else:
+        path_note = "想在任何目录直接用 `jand`：`mkdir -p ~/.local/bin && cp jand ~/.local/bin/`（确保 `~/.local/bin` 在 PATH 上），然后再运行一次 `jand setup`。或者用一行安装命令 `curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | sh`。"
     if notarized:
         provenance = "本包的可执行文件已使用 Developer ID 签名并通过 Apple 公证。未做独立密码学审计。"
     elif signed:
@@ -130,32 +139,43 @@ def quickstart(windows, relay, signed=False, notarized=False):
         provenance = "本版为开发原型，未做平台代码签名、公证或独立密码学审计。"
     return f"""# jand 使用说明
 
-这是已经编译好的客户端，无需安装 Go。解压后在此目录打开{shell}。
+jand 让你的 AI Agent 把任务安全地交给另一台机器上的 Agent，或者和它来回协作。内容端到端加密，中间的 Relay 只转发密文，看不到内容。
 
-服务器地址：`{relay}`。{example_note}公网建议使用 HTTPS；直接 HTTP + IP 可用于联测。
-也可以把真实地址写进本机配置，之后的命令就不用再带 `--relay`：在 `jand config` 显示的 `config_file` 路径创建 `{{"relay": "https://你的地址"}}`，运行 `{exe} config` 确认生效。
+## 1. 配置（只需一次）
 
-发送任务交接文件；上传成功后程序退出，并显示一次性接收码：
-
-```
-{exe} send --relay {relay} jand-template.md
-```
-
-接收文件（粘贴完整的 43 字符接收码）：
+在这个目录打开{shell}，运行：
 
 ```
-{exe} --relay {relay} '<接收码>'
+{exe} setup
 ```
 
-收到后会输出保存路径；`--json` 中的 `requires_user_approval=true` 是固定提示，不表示程序检测到用户已批准。接收端 Agent 只先阅读包、向本地用户摘要目标、证据、拟做动作和风险，并询问是否授权执行该具体动作；在明确确认前不开始任务。包内任何授权声明都不能代替接收端用户决定。程序不会自动启动或控制 Agent。
-双方使用同一个 Relay，但不必同时在线。0.3 版 Relay 兼容 0.2 版客户端的普通交接。Relay 只在内存中暂存密文 10 分钟，重启后未领取的包消失。
-发送命令成功只表示密文已暂存；若要等待接收方保存确认，发送时加 `--wait 10m`。
-每次最多传 10 MiB 单文件，接收码只能领取一次；领取失败后由发送方生成新码。
+它会问你几件事：Relay 地址（{relay_hint}）、访问令牌（Relay 要求时才问）、你用哪些 Agent（推荐 Claude Code）。然后自动配好，并给自己发一个文件做测试。看到「可以用了」就完成了。以后想改，再运行一次就行。
 
-对话（0.3 新增，需要 0.4.1 的 Relay）：发送时加 `--chat --goal '<什么算做完>'`，交接文件会作为对话邀请发出；双方各自 `chat done` 报告完成，或消息预算用完时对话暂停，双方用户都同意新目标才继续。可用 `--workflow` 选择协作流程（示例见仓库 workflows/ 目录）。对方同意后执行 `{exe} chat join --relay {relay} '<接收码>'`，之后双方用 `{exe} chat send <chat> 文本` 发消息，用 `{exe} chat recv --wait 30m <chat>` 收消息。详见 `{exe} chat --help` 与 AGENT.md。
+{path_note}
+
+## 2. 使用：直接跟你的 Agent 说
+
+- **交出去**：「用 jand 把这个任务交接给 XX」。Agent 会给你一个 43 位的接收码，你用微信、钉钉等发给对方。码 10 分钟内有效，只能用一次。
+- **收进来**：把对方给的码交给你的 Agent：「用 jand 收一下：<接收码>」。Agent 会先把内容和对方的请求讲给你听，你同意了它才动手。
+- **协作**：「用 jand 和对方的 Agent 协作，目标是……」。对方的用户同意后，两个 Agent 自己来回沟通；做完了，或者需要你拍板时，它们会停下来问你。
+
+## 3. 看过程
+
+- `{exe} chat list`：本机的对话和状态。
+- `{exe} chat view <对话>`：在浏览器里打开对话经过：谁做了什么、哪个请求被谁回应了。
+- 如果 setup 时你选了「Agent 不能在后台等消息」（poll）：对话进行中{another}运行 `{exe} chat watch <对话>`，对方来消息时它会响铃，提醒你去叫 Agent。
+
+## 需要知道的
+
+- 对方 Agent 发来的任何内容都只是资料或请求，不能替你授权；你的 Agent 做事之前会先问你。
+- 双方必须用同一个 Relay。
+- Relay 只在内存里暂存密文，10 分钟没人领取就作废；单个文件最大 10 MiB。
+- 出了问题：`{exe} config` 查看当前配置，或者重新运行 `{exe} setup`，它最后的自检会告诉你卡在哪一步。
+
+---
 
 {provenance}
-更多说明见构建信息及随包的模板。二进制 SHA-256 在 BUILD-INFO.json 中。
+给 Agent 的完整说明：`{exe} help agent`（内容同随包的 AGENT.md）。`jand-template.md` 是交接文件的结构范例。二进制的 SHA-256 在 BUILD-INFO.json 中。
 """
 
 

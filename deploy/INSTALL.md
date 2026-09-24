@@ -1,4 +1,4 @@
-# jand 0.2 Relay 部署与联测（Supervisor + HTTPS）
+# jand Relay 部署与联测（Supervisor + HTTPS）
 
 以下命令由服务器管理员执行。先确认服务器架构、现有 Supervisor 配置包含目录、域名 DNS、证书和私钥路径，以及 8787 端口是否已有旧 Relay。切换时等待旧会话结束；Relay 的未领取密文只在内存中，重启会丢失。旧 0.1 WebSocket 客户端不能连接 0.2 HTTP Relay。
 
