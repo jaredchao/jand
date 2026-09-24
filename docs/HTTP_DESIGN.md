@@ -1,6 +1,6 @@
 # jand 交接协议（HTTP）
 
-本文描述一次性交接（`/v1/handoffs/`）。它自 0.2 起未变，适用于 0.2 到 0.4.2。对话与协作使用独立的 `/v1/chats/` 接口，见 [CHAT_DESIGN.md](CHAT_DESIGN.md)；配置见 [CONFIG_DESIGN.md](CONFIG_DESIGN.md)。
+本文描述一次性交接（`/v1/handoffs/`）。它自 0.2 起未变，适用于 0.2 到 0.4.3。对话与协作使用独立的 `/v1/chats/` 接口，见 [CHAT_DESIGN.md](CHAT_DESIGN.md)；配置见 [CONFIG_DESIGN.md](CONFIG_DESIGN.md)。
 
 交接把一个不超过 10 MiB 的文件从发送端 Agent 所在机器交给接收端 Agent 所在机器。Agent 调用本地命令；程序不会唤醒另一端 Agent，也不会执行收到的内容。
 
@@ -55,6 +55,6 @@
 
 对话功能使用独立的 `/v1/chats/` 接口，见 [CHAT_DESIGN.md](CHAT_DESIGN.md)；上表所列接口不受影响。
 
-交接的线协议自 0.2 起未变：0.2.x 到 0.4.2 的客户端和 Relay 可以任意组合收发，由 `scripts/compat_smoke.py` 验证。旧的 0.1 WebSocket 客户端不能连接。
+交接的线协议自 0.2 起未变：0.2.x 到 0.4.3 的客户端和 Relay 可以任意组合收发，由 `scripts/compat_smoke.py` 验证。旧的 0.1 WebSocket 客户端不能连接。
 
 交接包元数据（加密的 JSON，含文件名、大小、SHA-256）上限 2048 字节。0.3 起对话邀请在其中加入 `chat`、`goal`、`budget` 三个字段；0.2.x 接收端会忽略它们，照常保存文件。为保持这一点，目标限制在 1 KiB，协作流程不放在这里，而是放进对话章程。
