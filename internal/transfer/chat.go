@@ -307,6 +307,12 @@ func checkText(text string) error {
 
 // chatCall sends one JSON request and maps the relay's chat statuses to errors.
 func chatCall(ctx context.Context, relay, room, action, token string, body any) (*http.Response, error) {
+	return chatDo(ctx, relay, room, action, token, "", body)
+}
+
+// chatDo is chatCall that may also carry a relay access token, which only
+// room creation needs.
+func chatDo(ctx context.Context, relay, room, action, token, access string, body any) (*http.Response, error) {
 	p := "/v1/chats/" + room
 	if action != "" {
 		p += "/" + action
@@ -332,6 +338,9 @@ func chatCall(ctx context.Context, relay, room, action, token string, body any) 
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if access != "" {
+		req.Header.Set(accessHeader, access)
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -380,7 +389,7 @@ func createChat(ctx context.Context, c code.Code, o Options) (*chatState, error)
 	if w.PauseNotes != nil {
 		body["pause_notes"] = *w.PauseNotes
 	}
-	resp, err := chatCall(ctx, o.RelayURL, s.ID, "", "", body)
+	resp, err := chatDo(ctx, o.RelayURL, s.ID, "", "", o.AccessToken, body)
 	if err != nil {
 		return nil, err
 	}
@@ -833,7 +842,7 @@ func pause(ctx context.Context, id, summary, action string, opts Options) error 
 	s.record(o.StateDir, s.Role, action, summary)
 	e := Event{Event: action, Chat: s.ID, By: "self", Text: summary}
 	if action == "checkpoint" {
-		e.Reason = "goal_reached"
+		e.Reason, e.Message = "goal_reached", PausedNote
 	}
 	o.Emit(e)
 	return nil
@@ -1029,6 +1038,13 @@ func (s *chatState) openPeer(key [32]byte, cur *chatCursor, e relayEvent, kind s
 	return text, ""
 }
 
+// PausedNote goes with every checkpoint event. In a real session both the
+// user and the peer's agent took a checkpoint for the end of the chat: the
+// user expected to need a new code, and the peer stopped receiving, so it
+// never saw the next proposal.
+const PausedNote = "The chat is paused, not ended. Ask your user: end it (chat close) or continue with a new goal (chat propose). " +
+	"The same chat continues; no new code is needed. Meanwhile keep chat recv running, or you will not see the peer's proposal."
+
 // translate turns one relay event into a local event, verifying message
 // direction, authenticity and ordering. The relay is not trusted.
 func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relayEvent) Event {
@@ -1055,6 +1071,9 @@ func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relay
 		}
 	case "checkpoint", "done":
 		out.Event, out.Reason = e.Type, e.Reason
+		if e.Type == "checkpoint" {
+			out.Message = PausedNote
+		}
 		if e.Type == "checkpoint" && e.From == "" {
 			// Relay-enforced: the budget is spent, or both sides are done.
 			if e.Reason != "budget" && e.Reason != "all_done" && e.Reason != "any_done" {

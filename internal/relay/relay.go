@@ -3,6 +3,7 @@
 package relay
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -50,6 +51,38 @@ type Config struct {
 
 	// Version is the program version reported by /healthz; empty omits it.
 	Version string
+
+	// AccessTokenHashes are the SHA-256 of the tokens allowed to create a
+	// handoff or a chat. Empty means anyone may. Only creation is checked:
+	// that is what consumes relay capacity, and a receiver holding a code
+	// needs no token of their own.
+	AccessTokenHashes [][]byte
+}
+
+// AccessHeader carries a relay access token on requests that create sessions.
+const AccessHeader = "X-Jand-Access"
+
+// admitted reports whether req may create a session on this relay.
+func (r *Relay) admitted(req *http.Request) bool {
+	if len(r.config.AccessTokenHashes) == 0 {
+		return true
+	}
+	token := req.Header.Get(AccessHeader)
+	if token == "" {
+		return false
+	}
+	sum := sha256.Sum256([]byte(token))
+	ok := 0
+	for _, h := range r.config.AccessTokenHashes {
+		ok |= subtle.ConstantTimeCompare(sum[:], h)
+	}
+	return ok == 1
+}
+
+// refuse answers a creation request that carries no valid access token.
+func (r *Relay) refuse(w http.ResponseWriter, room, what string) {
+	r.log.Warn(what+" rejected", "room", tag(room), "reason", "access token missing or unknown")
+	http.Error(w, "this relay requires an access token; set JAND_ACCESS_TOKEN", http.StatusUnauthorized)
 }
 
 // ChatFeatures lists what this relay's chat protocol supports, reported by
@@ -198,7 +231,8 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Version       string   `json:"version,omitempty"`
 			Handoff       string   `json:"handoff"`
 			ChatFeatures  []string `json:"chat_features"`
-		}{"ok", int64(time.Since(r.started).Seconds()), r.config.Version, "handoff/0.2", ChatFeatures})
+			Access        bool     `json:"access"`
+		}{"ok", int64(time.Since(r.started).Seconds()), r.config.Version, "handoff/0.2", ChatFeatures, len(r.config.AccessTokenHashes) > 0})
 		return
 	}
 	if chat, ok := strings.CutPrefix(req.URL.Path, "/v1/chats/"); ok {
@@ -220,6 +254,10 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	switch {
 	case req.Method == http.MethodPut && !receipt:
+		if !r.admitted(req) {
+			r.refuse(w, path, "upload")
+			return
+		}
 		r.put(w, req, path)
 	case req.Method == http.MethodGet && !receipt:
 		r.claim(w, req, path)

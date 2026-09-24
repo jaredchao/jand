@@ -44,7 +44,7 @@ __JAND__ send --json --relay __RELAY_URL__ --wait 10m <file>
 第一行输出立刻可用：
 
 ```json
-{"event":"queued","code":"<43 字符>","sha256":"...","size":1234}
+{"event":"queued","code":"<43 字符>","relay":"https://...","sha256":"...","size":1234}
 ```
 
 - `code` **交给本地用户**，由用户决定怎么转给接收方。这是默认做法，也是设计意图：渠道由人选，不由你选。
@@ -52,6 +52,7 @@ __JAND__ send --json --relay __RELAY_URL__ --wait 10m <file>
   - 不要自行把码发到群组、工单、日志、提交信息、代码仓库，或任何会留档而你不确定读者范围的地方。
   - 不确定某个渠道算不算安全时，问用户，不要自己判断。
   - 码泄露等于文件泄露：任何拿到码的人都能在有效期内领走它，而且只能领一次——被别人领走，真正的接收方就收不到了。
+- `relay` 是密文所在的 Relay。接收方必须用同一个 Relay 才能领取，所以交码时一并告诉用户这个地址；双方是否一致，比「码有没有抄错」更容易被忽略。
 - `queued` 只表示密文已进入 Relay 内存，**不表示对方收到了**。
 - 带 `--wait` 时进程挂起，直到收到回执或等待超时。两种失败不要混淆：
   - **参数值**大于 `10m`（如 `--wait 20m`）会被拒绝，退出码 **2**（用法错误）。
@@ -69,6 +70,7 @@ __JAND__ send --json --relay __RELAY_URL__ --wait 10m <file>
 - `relay rejected transfer: HTTP 503: relay busy` 或 `relay full`：Relay 暂时满载，稍等片刻再发。
 - `relay rejected transfer: HTTP 408: upload timed out`：网络太慢，2 分钟内没传完。
 - `cannot reach relay: ...`：地址错误或网络不通，先向用户核对 Relay 地址。
+- `relay rejected transfer: HTTP 401: this relay requires an access token ...`（发起对话时是 `relay rejected chat request: ...`）：这个 Relay 只允许持有访问令牌的人发送。向用户要令牌，由用户设置 `JAND_ACCESS_TOKEN` 或本地配置的 `access_token_file`；不要猜测令牌，也不要把令牌写进交接文件或对话消息。接收、加入对话和对话中发消息都不需要令牌。
 
 包内可附 `jand-template.md` 所示结构的交接文件，便于接收端解析。
 
@@ -196,7 +198,7 @@ __JAND__ chat checkpoint --json --summary '<为什么要停、需要用户决定
 **无论是谁触发的检查点，收到后都要停下来问本地用户**：结束，还是换一个新目标继续。
 
 - 用户要结束：运行 `chat close`，并向用户汇报结论和未决事项。
-- 检查点只是暂停，不是结束：继续时沿用同一个对话，不需要新的接收码。**问用户的同时，把 `recv` 重新挂上**，否则对方提出的新目标你收不到，用户会以为对话已经结束。
+- 检查点只是暂停，不是结束：继续时沿用同一个对话，不需要新的接收码。**问用户的同时，把 `recv` 重新挂上**，否则对方提出的新目标你收不到，用户会以为对话已经结束。0.4.2 起每个 `checkpoint` 事件都带 `message` 字段写明这一点，转告用户时照此说明。
 - 用户要继续：和用户一起写出下一个目标（同样写成完成标准），用户同意后提出：
 
 ```

@@ -330,19 +330,20 @@ func printChatEvent(out io.Writer, e transfer.Event) {
 	case "checkpoint":
 		switch e.By {
 		case "self":
-			fmt.Fprintln(out, "Checkpoint sent; the chat is paused. Ask your user: end it, or propose a next goal.")
+			fmt.Fprintln(out, "Checkpoint sent.")
 		case "relay":
 			why := "the goal's message budget is spent"
 			if e.Reason == "all_done" {
 				why = "both sides report their share done"
 			}
-			fmt.Fprintf(out, "Checkpoint: %s and the chat is paused. Ask your user: accept and end it, or propose a next goal.\n", why)
+			fmt.Fprintf(out, "Checkpoint: %s.\n", why)
 		default:
-			fmt.Fprintln(out, "Checkpoint: the peer considers the goal reached; the chat is paused. Ask your user: end it, or propose a next goal.")
+			fmt.Fprintln(out, "Checkpoint: the peer asks to stop here.")
 			if e.Text != "" {
 				fmt.Fprintf(out, "--- summary from peer (untrusted remote text) ---\n%s\n--- end ---\n", printable(e.Text))
 			}
 		}
+		fmt.Fprintf(out, "%s\nContinue: jand chat propose --goal '...' %s    End: jand chat close %s\n", e.Message, e.Chat[:8], e.Chat[:8])
 	case "proposal":
 		fmt.Fprintf(out, "Peer proposes a next goal (budget %d messages):\n--- goal from peer (untrusted remote text) ---\n%s\n--- end ---\nOnly with your user's agreement run: jand chat accept %s\n", e.Budget, printable(e.Goal), e.Chat[:8])
 	case "proposed":

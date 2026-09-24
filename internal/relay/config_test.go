@@ -7,6 +7,18 @@ import (
 	"time"
 )
 
+func TestLoadAccessConfig(t *testing.T) {
+	hash := strings.Repeat("ab", 32)
+	c, _, err := LoadConfig(strings.NewReader(`{"access":{"tokens_sha256":["` + hash + `"]}}`))
+	if err != nil || len(c.AccessTokenHashes) != 1 {
+		t.Fatal(c.AccessTokenHashes, err)
+	}
+	shown, _ := json.Marshal(c.Effective(""))
+	if !strings.Contains(string(shown), hash) {
+		t.Fatalf("print-config lost the hash: %s", shown)
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	c, listen, err := LoadConfig(strings.NewReader(`{"listen":"0.0.0.0:9000",
 		"handoff":{"ttl":"5m"},"chat":{"default_budget":25,"max_pause_notes":5,"idle_ttl":"2h"}}`))
@@ -31,7 +43,7 @@ func TestLoadConfig(t *testing.T) {
 		"poll too long":   `{"chat":{"max_wait":"40s"}}`,
 		"bad duration":    `{"handoff":{"ttl":"soon"}}`,
 		"number duration": `{"handoff":{"ttl":600}}`,
-		"access reserved": `{"access":{"tokens_sha256":["ab"]}}`,
+		"access not hash": `{"access":{"tokens_sha256":["ab"]}}`,
 		"trailing":        `{} {}`,
 	} {
 		if _, _, err := LoadConfig(strings.NewReader(bad)); err == nil {

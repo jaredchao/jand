@@ -21,7 +21,7 @@ import (
 	"github.com/jaredchao/jand/internal/transfer"
 )
 
-const version = "0.4.1"
+const version = "0.4.2"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -50,7 +50,8 @@ Options (before file/code):
   --workflow NAME  With --chat: a workflow from $JAND_HOME/workflows/NAME.json, or a path
 
 Defaults come from $JAND_HOME/config.json (see jand config); flags and
-JAND_RELAY override it.
+JAND_RELAY override it. A relay that requires an access token for sending
+reads it from JAND_ACCESS_TOKEN or the config's access_token_file.
 
 Exit codes: 0 queued/saved/confirmed, 1 failure, 2 usage, 3 delivery unconfirmed, 130 canceled.
 Use --relay http://SERVER_IP:8787 for direct IP access, or https:// with TLS.
@@ -119,6 +120,12 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	}
 	emit := emitter(*jsonOutput, out, stderr)
 	o := transfer.Options{RelayURL: relayURL, OutputDir: *dir, WaitTimeout: *wait, Emit: emit, Chat: *invite, Goal: *goal, Budget: *budget}
+	if sender {
+		if o.AccessToken, _, err = cfg.accessToken(); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
+	}
 	if *invite {
 		// Budget: --budget, then the workflow's, then this machine's default,
 		// then the relay's.
@@ -184,12 +191,13 @@ func emitter(jsonOutput bool, out, stderr io.Writer) func(transfer.Event) {
 		switch e.Event {
 		case "queued":
 			if e.Chat == "" {
-				fmt.Fprintf(out, "Code: %s\nEncrypted transfer queued in relay RAM (expires in 10 minutes).\n", e.Code)
+				fmt.Fprintf(out, "Code: %s\nRelay: %s (the receiver must use this same relay)\nEncrypted transfer queued in relay RAM (expires in 10 minutes).\n", e.Code, e.Relay)
 				return
 			}
 			// Both ids are printed; say plainly which one goes to the peer. The
 			// chat id has been sent by mistake more than once.
 			fmt.Fprintf(out, "Code: %s\n  -> Give this receive code to the other side. It must be claimed within 10 minutes.\n", e.Code)
+			fmt.Fprintf(out, "Relay: %s\n  -> The other side must use this same relay.\n", e.Relay)
 			fmt.Fprintf(out, "Chat: %s\n  -> Your own chat id for later commands. Do not send it to the other side; it cannot be used to join.\n", e.Chat)
 			fmt.Fprintf(out, "Wait for the receiver: jand chat recv --wait 30m %s\n", e.Chat[:8])
 		case "saved":
@@ -270,7 +278,7 @@ func serve(ctx context.Context, args []string, out, stderr io.Writer) int {
 	config.Logger.Info("relay listening", "version", version, "addr", listener.Addr().String(),
 		"max_sessions", config.MaxSessions, "max_stored", config.MaxStoredBytes, "ttl", config.TTL,
 		"upload_timeout", config.UploadTimeout, "max_chats", config.MaxChats, "chat_default_budget", config.ChatDefaultBudget,
-		"chat_max_pause_notes", config.ChatPauseNotes, "config", *configPath)
+		"chat_max_pause_notes", config.ChatPauseNotes, "access", len(config.AccessTokenHashes) > 0, "config", *configPath)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	select {

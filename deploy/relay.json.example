@@ -18,5 +18,8 @@
     "lifetime": "6h",
     "ended_ttl": "10m",
     "max_wait": "20s"
+  },
+  "access": {
+    "tokens_sha256": []
   }
 }

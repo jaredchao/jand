@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/jaredchao/jand/internal/transfer"
 )
@@ -21,8 +22,8 @@ const defaultRelay = "http://127.0.0.1:8787"
 type clientConfig struct {
 	Relay  string `json:"relay,omitempty"`
 	OutDir string `json:"out_dir,omitempty"`
-	// Reserved for relay access tokens, not implemented yet; rejected when
-	// set so nobody believes a token is being sent.
+	// AccessTokenFile names a file holding the relay access token, so the
+	// config itself never contains the secret and can be shown to others.
 	AccessTokenFile string `json:"access_token_file,omitempty"`
 	Chat            struct {
 		DefaultBudget   int      `json:"default_budget,omitempty"`
@@ -50,9 +51,6 @@ func loadClientConfig() (clientConfig, error) {
 	if err := dec.Decode(&c); err != nil {
 		return c, fmt.Errorf("%s: %w", clientConfigPath(), err)
 	}
-	if c.AccessTokenFile != "" {
-		return c, fmt.Errorf("%s: access_token_file is reserved; relay access tokens are not implemented yet", clientConfigPath())
-	}
 	if c.Chat.DefaultBudget < 0 || c.Chat.DefaultBudget > transfer.MaxChatBudget {
 		return c, fmt.Errorf("%s: chat.default_budget must be between 1 and %d", clientConfigPath(), transfer.MaxChatBudget)
 	}
@@ -77,6 +75,25 @@ func (c clientConfig) relayURL(flagValue string, flagSet bool) (string, string) 
 	return defaultRelay, "default"
 }
 
+// accessToken applies the precedence JAND_ACCESS_TOKEN > config file > none.
+func (c clientConfig) accessToken() (string, string, error) {
+	if t := strings.TrimSpace(os.Getenv("JAND_ACCESS_TOKEN")); t != "" {
+		return t, "JAND_ACCESS_TOKEN", nil
+	}
+	if c.AccessTokenFile == "" {
+		return "", "none", nil
+	}
+	data, err := os.ReadFile(c.AccessTokenFile)
+	if err != nil {
+		return "", "", fmt.Errorf("%s: access_token_file: %w", clientConfigPath(), err)
+	}
+	t := strings.TrimSpace(string(data))
+	if t == "" {
+		return "", "", fmt.Errorf("%s: access_token_file %s is empty", clientConfigPath(), c.AccessTokenFile)
+	}
+	return t, "config", nil
+}
+
 // configCommand prints where each effective client setting comes from.
 func configCommand(args []string, out, stderr io.Writer) int {
 	if len(args) > 0 && args[0] != "--json" {
@@ -93,7 +110,14 @@ func configCommand(args []string, out, stderr io.Writer) int {
 	if c.OutDir != "" {
 		outDir, outSource = c.OutDir, "config"
 	}
+	// The token itself is never printed, only whether one will be sent.
+	_, accessSource, err := c.accessToken()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
 	view := map[string]any{
+		"access_token":     accessSource,
 		"config_file":      clientConfigPath(),
 		"state_dir":        transfer.DefaultStateDir(),
 		"workflow_dir":     transfer.WorkflowDir(),

@@ -132,7 +132,7 @@ func TestHealthzReportsVersionNotSessions(t *testing.T) {
 	defer resp.Body.Close()
 	var body map[string]any
 	if json.NewDecoder(resp.Body).Decode(&body) != nil || body["status"] != "ok" || body["version"] != "9.9.9" ||
-		body["handoff"] != "handoff/0.2" || body["chat_features"] == nil {
+		body["handoff"] != "handoff/0.2" || body["chat_features"] == nil || body["access"] != false {
 		t.Fatalf("%v", body)
 	}
 	for _, leak := range []string{"active", "sessions", "chats", "stored"} {

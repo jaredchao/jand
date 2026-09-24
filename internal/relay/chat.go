@@ -171,6 +171,10 @@ func (r *Relay) serveChat(w http.ResponseWriter, req *http.Request, path string)
 	}
 	switch {
 	case req.Method == http.MethodPut && action == "":
+		if !r.admitted(req) {
+			r.refuse(w, room, "chat create")
+			return
+		}
 		r.chatCreate(w, req, room)
 	case req.Method == http.MethodGet && action == "events":
 		r.chatEvents(w, req, room)

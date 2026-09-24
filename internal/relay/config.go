@@ -2,6 +2,7 @@ package relay
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -61,9 +62,9 @@ type FileConfig struct {
 		EndedTTL       *Duration `json:"ended_ttl,omitempty"`
 		MaxWait        *Duration `json:"max_wait,omitempty"`
 	} `json:"chat"`
-	// Access is reserved for relay access tokens, which are not implemented
-	// yet. A non-empty list is rejected rather than silently ignored, so no
-	// operator believes the relay is protected when it is not.
+	// Access lists the SHA-256 (hex) of the tokens that may create sessions.
+	// Empty leaves the relay open, as before. Several entries let a token be
+	// rotated without every sender switching at once.
 	Access struct {
 		TokensSHA256 []string `json:"tokens_sha256,omitempty"`
 	} `json:"access"`
@@ -86,10 +87,14 @@ func LoadConfig(r io.Reader) (Config, string, error) {
 	if dec.More() {
 		return Config{}, "", errors.New("relay config: trailing data after the JSON object")
 	}
-	if len(f.Access.TokensSHA256) > 0 {
-		return Config{}, "", errors.New("relay config: access.tokens_sha256 is reserved; access control is not implemented yet")
-	}
 	c := DefaultConfig()
+	for _, h := range f.Access.TokensSHA256 {
+		sum, err := hex.DecodeString(h)
+		if err != nil || len(sum) != 32 {
+			return Config{}, "", fmt.Errorf("relay config: access.tokens_sha256 entry %q is not a hex SHA-256", h)
+		}
+		c.AccessTokenHashes = append(c.AccessTokenHashes, sum)
+	}
 	listen := ""
 	if f.Listen != nil {
 		listen = *f.Listen
@@ -166,5 +171,8 @@ func (c Config) Effective(listen string) FileConfig {
 	f.Chat.DefaultBudget, f.Chat.MaxPauseNotes = i(c.ChatDefaultBudget), i(c.ChatPauseNotes)
 	f.Chat.InviteTTL, f.Chat.DecideTTL, f.Chat.IdleTTL = d(c.ChatInviteTTL), d(c.ChatDecideTTL), d(c.ChatIdleTTL)
 	f.Chat.Lifetime, f.Chat.EndedTTL, f.Chat.MaxWait = d(c.ChatLifetime), d(c.ChatEndedTTL), d(c.ChatMaxWait)
+	for _, h := range c.AccessTokenHashes {
+		f.Access.TokensSHA256 = append(f.Access.TokensSHA256, hex.EncodeToString(h))
+	}
 	return f
 }

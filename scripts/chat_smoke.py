@@ -91,6 +91,7 @@ def main():
             for side in (host, guest):
                 got = events(jand(side, "chat", "recv", "--json", "--wait", "5s", chat))
                 assert got[-1]["event"] == "checkpoint" and got[-1]["reason"] == "all_done", got
+                assert "paused, not ended" in got[-1]["message"], got
             # A closing note still passes the pause, marked as such.
             events(jand(guest, "chat", "send", "--json", chat, "收尾：以 g3 为准"))
             got = events(jand(host, "chat", "recv", "--json", chat))

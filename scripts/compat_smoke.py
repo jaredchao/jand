@@ -54,8 +54,14 @@ def main():
             got = jand(old, "--json", "--relay", url, "--out", str(root / "in-chat-old"), "--", queued["code"])
             assert got.returncode == 0, got.stdout + got.stderr
             saved = json.loads(got.stdout.splitlines()[-1])
-            assert saved["sha256"] == digest and "chat_invite" not in saved
-            report["new_chat_sender_to_old_receiver"] = "passed (saved as plain handoff)"
+            assert saved["sha256"] == digest
+            if report["old_client_version"].startswith(("0.1", "0.2")):
+                # Clients before 0.3 know nothing of chats: the invite must degrade to a plain handoff.
+                assert "chat_invite" not in saved
+                report["new_chat_sender_to_old_receiver"] = "passed (saved as plain handoff)"
+            else:
+                assert saved.get("chat_invite"), saved
+                report["new_chat_sender_to_old_receiver"] = "passed (saved, invite recognised)"
         print(json.dumps(report, indent=2, ensure_ascii=False))
     finally:
         relay.terminate()

@@ -35,9 +35,18 @@ sudo supervisorctl status jand-relay
 curl -fsS http://127.0.0.1:8787/healthz
 ```
 
-Relay 的运行日志写入 Supervisor 配置中的 `stdout_logfile`（示例为 `/var/log/jand-relay.log`）：启动一行，其后每次上传、领取、回执与过期各一行，被拒绝的请求记 WARN 并注明原因（`busy`、`malformed tokens`、`upload timed out`、`invalid or oversized body`、`code collision`、`relay full`；`relay full` 一行附带当前与上限的会话数和字节数）。启动行会列出版本与 `max_sessions`、`max_stored`、`ttl`、`upload_timeout`，可据此确认替换后的程序已生效。日志只含会话短标识与字节数，不含接收码、令牌或文件内容。没有流量时不产生日志，此时用 `curl -s http://127.0.0.1:8787/healthz` 确认进程存活，它返回 `status`、`uptime_seconds`、`version` 等字段（0.4.1 起带版本号）。
+Relay 的运行日志写入 Supervisor 配置中的 `stdout_logfile`。示例配置写的是 `/var/log/jand-relay.log`，这只是示例值：服务器上实际用的路径以你安装的那份配置为准（`grep stdout_logfile /etc/supervisor/conf.d/jand-relay.conf`）。不确定路径时，用 `sudo supervisorctl tail jand-relay` 查看最近的日志，它不依赖路径。日志内容：启动一行，其后每次上传、领取、回执与过期各一行，被拒绝的请求记 WARN 并注明原因（`busy`、`malformed tokens`、`upload timed out`、`invalid or oversized body`、`code collision`、`relay full`；`relay full` 一行附带当前与上限的会话数和字节数）。启动行会列出版本与 `max_sessions`、`max_stored`、`ttl`、`upload_timeout`，可据此确认替换后的程序已生效。日志只含会话短标识与字节数，不含接收码、令牌或文件内容。没有流量时不产生日志，此时用 `curl -s http://127.0.0.1:8787/healthz` 确认进程存活，它返回 `status`、`uptime_seconds`、`version` 等字段（0.4.1 起带版本号）。
 
 **可选：配置文件（0.4.1 起）。** 需要调整超时、容量、对话预算或暂停后收尾消息上限时，把 [relay.json.example](relay.json.example) 复制为 `/etc/jand/relay.json`，按需删改（没写的字段保持默认值；拼错的字段名会让 Relay 拒绝启动，而不是被悄悄忽略），然后在 Supervisor 的 `command` 末尾加 `--config /etc/jand/relay.json`。命令行上的 `--listen`、`--max-sessions` 仍然优先于配置文件。上线前先运行 `jand relay --config /etc/jand/relay.json --print-config` 查看最终生效的值；启动日志也会记录所用的配置文件路径。不加 `--config` 时，行为与此前版本完全一致。
+
+**可选：访问令牌（0.4.2 起）。** 不开启时，任何知道域名的人都能用这台 Relay 中转文件（内容仍是端到端加密的，Relay 看不到，但容量会被占用）。开启后，只有带令牌的一方才能**新建**交接或对话；领取、加入和对话中的消息都不需要令牌，所以只需把令牌发给会从这台 Relay 发东西的人，接收方拿到码照常能收。生成令牌并计算哈希：
+
+```bash
+openssl rand -base64 32                      # 令牌，私下发给发送方
+printf %s '<令牌>' | shasum -a 256          # 哈希，写进配置（Linux 上也可用 sha256sum）
+```
+
+在上面的 `/etc/jand/relay.json` 里加入 `"access": {"tokens_sha256": ["<哈希>"]}`，重启 Relay。可以列多个哈希：换令牌时先加新的，等大家都换好再删旧的。启动日志的 `access=true` 和 `/healthz` 的 `"access":true` 表示已开启。被拒的请求记一行 WARN（`access token missing or unknown`），不记令牌。发送方用 `export JAND_ACCESS_TOKEN=<令牌>`，或在 `$JAND_HOME/config.json` 里写 `"access_token_file": "<存令牌的文件路径>"`；`jand config` 的 `access_token` 显示令牌来自哪里（不显示令牌本身）。开启后，旧版客户端仍能接收，但无法从这台 Relay 发送。
 
 示例 `autostart=false`，因此 `update` 后仍由管理员明确 `start`。若 8787 已被旧 Relay 占用，先查明旧进程和未完成会话；不要同时启动两个 Relay。`supervisorctl status` 和本机健康检查分别证明 Supervisor 进程状态与本机 HTTP 响应，不能证明公网入口或文件交付。
 
@@ -48,7 +57,7 @@ Relay 的运行日志写入 Supervisor 配置中的 `stdout_logfile`（示例为
 ```bash
 sudo install -m 0755 ./jand /usr/local/bin/jand
 sudo supervisorctl restart jand-relay
-tail -n 5 /var/log/jand-relay.log
+sudo supervisorctl tail jand-relay | tail -n 5
 curl -fsS http://127.0.0.1:8787/healthz
 ```
 
@@ -57,9 +66,9 @@ curl -fsS http://127.0.0.1:8787/healthz
 客户端要不要跟着升级，分两种情况：
 
 - **交接**：线协议自 0.2 起未变，已分发的客户端无需升级。
-- **对话**：协议仍在开发，Relay 升级时查看 README 的「兼容性」一节。0.4.1 的 Relay 兼容 0.4.0 客户端；0.3.x 与 0.4.x 之间未验证。升级对话协议时，提前通知使用对话的同事一起升级客户端。
+- **对话**：协议仍在开发，Relay 升级时查看 README 的「兼容性」一节。0.4.2 的 Relay 兼容 0.4.1 与 0.4.0 客户端；0.3.x 与 0.4.x 之间未验证。升级对话协议时，提前通知使用对话的同事一起升级客户端。
 
-0.4.1 起，`/healthz` 返回 `version` 和 `chat_features`，直接用 `curl -fsS https://你的域名/healthz` 就能确认公网上跑的是哪个版本、支持哪些对话功能。更早的版本不返回版本号，只能看启动日志。
+0.4.1 起，`/healthz` 返回 `version` 和 `chat_features`（0.4.2 起还有 `access`，表示是否要求访问令牌），直接用 `curl -fsS https://你的域名/healthz` 就能确认公网上跑的是哪个版本、支持哪些对话功能。更早的版本不返回版本号，只能看启动日志。
 
 ## 3. 域名与证书
 

@@ -49,6 +49,9 @@ type Event struct {
 	// A fixed receiver policy hint, never evidence that a user approved anything.
 	RequiresUserApproval bool   `json:"requires_user_approval,omitempty"`
 	Message              string `json:"message,omitempty"`
+	// Relay is the relay a queued transfer sits in. The receiver must use the
+	// same one, and a wrong JAND_RELAY or config value is easy to miss.
+	Relay string `json:"relay,omitempty"`
 
 	// Chat fields. Chat is the local chat id; ChatInvite marks a received
 	// packet whose sender asked for a chat, which is a request, not consent.
@@ -99,7 +102,13 @@ type Options struct {
 	Workflow *Workflow
 	// StateDir holds local chat state; empty means DefaultStateDir().
 	StateDir string
+	// AccessToken is sent when creating a handoff or chat on a relay that
+	// requires one. Receiving and chatting need none.
+	AccessToken string
 }
+
+// accessHeader is relay.AccessHeader, kept here so the client does not import the relay.
+const accessHeader = "X-Jand-Access"
 
 func (o Options) defaults() Options {
 	if o.OutputDir == "" {
@@ -317,6 +326,9 @@ func Send(ctx context.Context, filename string, opts Options) error {
 	if err != nil {
 		return err
 	}
+	if o.AccessToken != "" {
+		req.Header.Set(accessHeader, o.AccessToken)
+	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("X-Handoff-Claim", c.Token("claim"))
 	req.Header.Set("X-Handoff-Status", c.Token("status"))
@@ -334,7 +346,7 @@ func Send(ctx context.Context, filename string, opts Options) error {
 		}
 		return fmt.Errorf("relay rejected transfer: HTTP %d", resp.StatusCode)
 	}
-	queued := Event{Event: "queued", Code: c.String(), SHA256: digest, Size: int64(len(data))}
+	queued := Event{Event: "queued", Code: c.String(), Relay: o.RelayURL, SHA256: digest, Size: int64(len(data))}
 	if chat != nil {
 		queued.Chat = chat.ID
 	}

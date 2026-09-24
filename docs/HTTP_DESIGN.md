@@ -1,6 +1,6 @@
 # jand 交接协议（HTTP）
 
-本文描述一次性交接（`/v1/handoffs/`）。它自 0.2 起未变，适用于 0.2 到 0.4.1。对话与协作使用独立的 `/v1/chats/` 接口，见 [CHAT_DESIGN.md](CHAT_DESIGN.md)；配置见 [CONFIG_DESIGN.md](CONFIG_DESIGN.md)。
+本文描述一次性交接（`/v1/handoffs/`）。它自 0.2 起未变，适用于 0.2 到 0.4.2。对话与协作使用独立的 `/v1/chats/` 接口，见 [CHAT_DESIGN.md](CHAT_DESIGN.md)；配置见 [CONFIG_DESIGN.md](CONFIG_DESIGN.md)。
 
 交接把一个不超过 10 MiB 的文件从发送端 Agent 所在机器交给接收端 Agent 所在机器。Agent 调用本地命令；程序不会唤醒另一端 Agent，也不会执行收到的内容。
 
@@ -36,13 +36,14 @@
 | GET | `/v1/handoffs/{room}` | 凭领取令牌一次性取走密文 |
 | POST | `/v1/handoffs/{room}/receipt` | 接收端保存后提交回执 |
 | GET | `/v1/handoffs/{room}/receipt` | 发送端查询回执，204 表示未确认 |
-| GET | `/healthz` | 返回 `status`、`uptime_seconds`、`version`（程序版本）、`handoff`（交接协议，固定为 `handoff/0.2`）与 `chat_features`（Relay 支持的对话功能）。不含会话数、容量等信息，因为这个接口不需要认证 |
+| GET | `/healthz` | 返回 `status`、`uptime_seconds`、`version`（程序版本）、`handoff`（交接协议，固定为 `handoff/0.2`）、`chat_features`（Relay 支持的对话功能）与 `access`（0.4.2 起，是否要求访问令牌）。不含会话数、容量等信息，因为这个接口不需要认证 |
 
 上传被拒时，响应体是一行简短原因，发送端会原样附在错误信息后（过滤控制字符，最长 120 字符），例如 `relay rejected transfer: HTTP 503: relay full`：
 
 | 状态码 | 原因文本 | 含义 |
 | --- | --- | --- |
 | 400 | `invalid transfer` / `invalid or oversized transfer` | 令牌格式错误，或上传体过小、超过上限 |
+| 401 | `this relay requires an access token; set JAND_ACCESS_TOKEN` | Relay 开启了访问令牌（0.4.2 起），请求没带 `X-Jand-Access`，或令牌不在列表里 |
 | 408 | `upload timed out` | 上传体未在 2 分钟内传完 |
 | 409 | `code collision` | 房间号已被占用，重新发送会生成新码 |
 | 503 | `relay busy` | 同时上传数已满，稍后重试 |
@@ -52,6 +53,6 @@
 
 对话功能使用独立的 `/v1/chats/` 接口，见 [CHAT_DESIGN.md](CHAT_DESIGN.md)；上表所列接口不受影响。
 
-交接的线协议自 0.2 起未变：0.2.x 到 0.4.1 的客户端和 Relay 可以任意组合收发，由 `scripts/compat_smoke.py` 验证。旧的 0.1 WebSocket 客户端不能连接。
+交接的线协议自 0.2 起未变：0.2.x 到 0.4.2 的客户端和 Relay 可以任意组合收发，由 `scripts/compat_smoke.py` 验证。旧的 0.1 WebSocket 客户端不能连接。
 
 交接包元数据（加密的 JSON，含文件名、大小、SHA-256）上限 2048 字节。0.3 起对话邀请在其中加入 `chat`、`goal`、`budget` 三个字段；0.2.x 接收端会忽略它们，照常保存文件。为保持这一点，目标限制在 1 KiB，协作流程不放在这里，而是放进对话章程。

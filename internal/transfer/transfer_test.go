@@ -3,6 +3,7 @@ package transfer
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -46,6 +47,9 @@ func TestOfflineSingleUseTransfer(t *testing.T) {
 			sendOptions := Options{RelayURL: s.URL, Emit: func(e Event) {
 				if e.Event == "queued" {
 					invite = e.Code
+					if e.Relay != s.URL {
+						t.Errorf("queued relay %q, want %q", e.Relay, s.URL)
+					}
 				}
 			}}
 			if err := Send(ctx, fixture(t, content), sendOptions); err != nil {
@@ -285,5 +289,43 @@ func TestInterruptedDownloadSaysCodeIsUsed(t *testing.T) {
 	_, err := Receive(context.Background(), c.String(), Options{RelayURL: s.URL, OutputDir: t.TempDir()})
 	if err == nil || !strings.Contains(err.Error(), "ask the sender to send again") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestAccessTokenGuardsCreationOnly(t *testing.T) {
+	token := "team-secret"
+	sum := sha256.Sum256([]byte(token))
+	cfg := relay.DefaultConfig()
+	cfg.AccessTokenHashes = [][]byte{sum[:]}
+	_, s := server(t, cfg)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	for _, bad := range []string{"", "wrong"} {
+		err := Send(ctx, fixture(t, []byte("x")), Options{RelayURL: s.URL, AccessToken: bad})
+		if err == nil || !strings.Contains(err.Error(), "HTTP 401") || !strings.Contains(err.Error(), "access token") {
+			t.Fatalf("token %q: %v", bad, err)
+		}
+		err = Send(ctx, fixture(t, []byte("x")), Options{RelayURL: s.URL, AccessToken: bad, Chat: true, Goal: "g", StateDir: t.TempDir()})
+		if err == nil || !strings.Contains(err.Error(), "HTTP 401") {
+			t.Fatalf("chat, token %q: %v", bad, err)
+		}
+	}
+	var invite string
+	o := Options{RelayURL: s.URL, AccessToken: token, Emit: func(e Event) {
+		if e.Event == "queued" {
+			invite = e.Code
+		}
+	}}
+	if err := Send(ctx, fixture(t, []byte("x")), o); err != nil {
+		t.Fatal(err)
+	}
+	// The receiver has only the code, no token.
+	if _, err := Receive(ctx, invite, Options{RelayURL: s.URL, OutputDir: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	o.Chat, o.Goal, o.StateDir = true, "g", t.TempDir()
+	if err := Send(ctx, fixture(t, []byte("x")), o); err != nil {
+		t.Fatal(err)
 	}
 }

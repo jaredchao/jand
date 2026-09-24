@@ -322,7 +322,7 @@ func TestChatCheckpointAndNewGoal(t *testing.T) {
 		t.Fatal(err)
 	}
 	ev, _ := guest.recv(ctx, id, time.Second)
-	if types(ev) != "checkpoint" || ev[0].By != "peer" || ev[0].Text != "字段已对齐：id, name" || !ev[0].Untrusted {
+	if types(ev) != "checkpoint" || ev[0].By != "peer" || ev[0].Text != "字段已对齐：id, name" || !ev[0].Untrusted || ev[0].Message != PausedNote {
 		t.Fatalf("guest sees checkpoint: %+v", ev)
 	}
 	if err := ChatSend(ctx, id, ChatMessage{Kind: "request", Text: "继续"}, guest.o); err == nil || !strings.Contains(err.Error(), "paused") {
@@ -361,7 +361,7 @@ func TestChatCheckpointAndNewGoal(t *testing.T) {
 	if types(ev) != "message,message,checkpoint" || ev[2].By != "relay" || ev[2].Reason != "budget" {
 		t.Fatalf("budget checkpoint: %+v", ev)
 	}
-	if ev, _ := host.recv(ctx, id, 0); types(ev) != "checkpoint" || ev[0].By != "relay" {
+	if ev, _ := host.recv(ctx, id, 0); types(ev) != "checkpoint" || ev[0].By != "relay" || ev[0].Message != PausedNote {
 		t.Fatalf("host sees budget checkpoint: %+v", ev)
 	}
 	if err := ChatSend(ctx, id, ChatMessage{Kind: "request", Text: "三"}, host.o); err == nil || !strings.Contains(err.Error(), "paused") {

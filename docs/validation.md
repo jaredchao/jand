@@ -119,3 +119,16 @@
 - 单个长的前台调用（`go test -count=14`，08:57:31–08:58:58）：request 08:58:07 发出，`recv` 同一秒退出，但通知直到 08:58:58 这个调用结束才送到，压了约 51 秒，中途不会插进来。
 - 结论：宿主只在两个工具调用之间送来后台通知，响应延迟的上限等于当时那个前台调用剩下的时长。AGENT.md「协作」一节据此补充：耗时任务放到后台跑，或者拆成短的调用。接收方一侧同样受自身调用节奏影响（它记录的收到时刻比发出时刻晚 0–7 秒）。
 - 另发现：第一个目标进入检查点后，用户以为对话已经结束、需要新的接收码；接收方也没有重新挂 `recv`，所以收不到新提议。AGENT.md 补充：检查点只是暂停，问用户的同时要把 `recv` 挂回去。
+
+## 0.4.2：queued 显示 Relay 地址、INSTALL 日志路径说明、访问令牌
+
+程序的输出变了，行为与已发布的 0.4.1 不同，所以升为 0.4.2（兼容改动升补丁号）。
+
+- `queued` 事件新增 `relay` 字段；文本输出多一行 `Relay:`，写明接收方必须用同一个 Relay。此前发送方看不到自己实际用的是哪个 Relay（命令行、`JAND_RELAY`、配置文件都可能设置），对方用错 Relay 时只会看到「码无效」。只是加了一个字段，线协议和对话协议都没变。
+- INSTALL 写明 `/var/log/jand-relay.log` 只是示例配置里的值，给出查实际路径的命令；升级一节改用 `supervisorctl tail jand-relay`，不再依赖日志路径。
+- `go vet`、`go test -race`、`make smoke`（18 项）通过；本机 Relay 手动发送，文本和 `--json` 两种输出都带上了 Relay 地址。
+- 兼容：`compat_smoke.py` 分别以真实 0.4.1（main `7a4d0b1` 构建）与 v0.2.1-dev 为旧客户端，四种组合的交接都收到 `delivered`。另用脚本在 0.4.2 Relay 上让 0.4.2 与 0.4.1 互为发起方和接收方，走完邀请、加入、request 与 reply、双方 done、`all_done` 检查点，两个方向都正常。
+- `compat_smoke.py` 修正：最后一项原本假定旧接收端认不出对话邀请，这只对 0.3 之前的客户端成立；拿 0.4.1 当旧版时会误报失败。现在按旧版本号区分，0.3 之前仍要求按普通交接保存，之后的要求识别出邀请。
+- 访问令牌（可选，防止 Relay 被当作匿名中转）：Relay 配置 `access.tokens_sha256` 后，新建交接或对话必须带 `X-Jand-Access`；领取、加入、对话消息不检查。客户端从 `JAND_ACCESS_TOKEN` 或 `access_token_file` 读取令牌，只在发送时带上。`/healthz` 新增 `access`，启动日志新增 `access=`。设计取舍见 CONFIG_DESIGN「实现记录（0.4.2）」。
+- 访问令牌测试：配置解析与 `--print-config` 回读；不带令牌或令牌错误时交接与建房都返回 401，带对令牌可以发送，接收方不带令牌照常领取；客户端令牌来源的优先级与空文件报错；`/healthz` 默认 `access:false`。把 Relay 的检查改成永远放行后端到端测试失败，确认测试确实覆盖了检查。真实程序实测：本机 Relay 开启令牌，不带令牌发送得到 `HTTP 401: this relay requires an access token; set JAND_ACCESS_TOKEN`，环境变量与令牌文件两种方式都能发交接和对话，接收方不带令牌领取成功；Relay 日志只有一行 WARN，不含令牌。
+- 检查点提示写进程序输出：唤醒时机实测中，用户和接收方 Agent 都把检查点当成了对话结束。只改 AGENT.md 不够，Agent 用 `--json` 看不到文本输出。现在每个 `checkpoint` 事件（自己发起、对方发起、Relay 触发）都带 `message`：对话只是暂停，结束用 `chat close`，继续用 `chat propose`，不需要新码，其间保持 `recv` 才能收到对方的提议；文本输出打印这段话，再附上带对话 ID 的两条命令。单元测试覆盖对方发起与 Relay 触发两种，`chat_smoke` 检查 `all_done` 检查点的 `message`。
