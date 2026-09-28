@@ -81,7 +81,20 @@ Exit codes: 0 ok, 1 failure, 2 usage, 4 chat ended or gone,
 5 unread peer messages (read them first), 130 canceled.`)
 }
 
+// chat runs a chat command and adds what it cost this side to the chat's
+// cost record (docs/CORE.md). list and watch are left out: list is about no
+// one chat, and watch is for the person, not the agent.
 func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
+	cout, cerr := &countWriter{w: out}, &countWriter{w: stderr}
+	var m chatMeter
+	code := chatRun(ctx, args, cout, cerr, &m)
+	if len(args) > 0 {
+		m.record(args[0], cout, cerr, code)
+	}
+	return code
+}
+
+func chatRun(ctx context.Context, args []string, out, stderr io.Writer, m *chatMeter) int {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		chatUsage(out)
 		if len(args) == 0 {
@@ -91,6 +104,9 @@ func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
 	}
 	sub := args[0]
 	if sub == "list" || sub == "log" || sub == "view" || sub == "watch" {
+		if (sub == "log" || sub == "view") && len(args) > 1 {
+			m.id = args[len(args)-1] // the chat id comes after every flag
+		}
 		return history(ctx, sub, args[1:], out, stderr)
 	}
 	fs := flag.NewFlagSet("jand chat "+sub, flag.ContinueOnError)
@@ -132,8 +148,18 @@ func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if !set["wake"] && len(cfg.Chat.RecvWake) > 0 {
 		*wake = strings.Join(cfg.Chat.RecvWake, ",")
 	}
-	emit := emitter(*jsonOutput, out, stderr)
+	base := emitter(*jsonOutput, out, stderr)
+	emit := m.watch(func(e transfer.Event) {
+		if e.Event == "joined" && e.Transcript != "" {
+			m.id = e.Chat // this side's own join: the chat exists here from now on
+		}
+		base(e)
+	})
+	if sub != "join" && sub != "decline" {
+		m.id = fs.Arg(0)
+	}
 	o := transfer.Options{RelayURL: relayURL, Emit: emit}
+	var text string
 	switch sub {
 	case "join":
 		if fs.NArg() != 1 {
@@ -156,7 +182,6 @@ func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
 		}
 		err = transfer.ChatDecline(ctx, rawCode, *reason, o)
 	case "send":
-		var text string
 		switch {
 		case *file != "" && fs.NArg() == 1:
 			text, err = readText(*file, nil)
@@ -186,6 +211,7 @@ func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
 				kinds = append(kinds, k)
 			}
 		}
+		m.check = *wait == 0
 		err = transfer.ChatRecv(ctx, fs.Arg(0), *wait, kinds, o)
 	case "done":
 		if fs.NArg() != 1 {
@@ -214,6 +240,16 @@ func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
 		err = transfer.ChatClose(ctx, fs.Arg(0), o)
 	default:
 		return usageErr()
+	}
+	if err == nil {
+		switch sub {
+		case "send":
+			m.wrote = int64(len(text))
+		case "done", "checkpoint":
+			m.wrote = int64(len(*summary))
+		case "propose":
+			m.wrote = int64(len(*goal))
+		}
 	}
 	if errors.Is(err, transfer.ErrChatEnded) || errors.Is(err, transfer.ErrChatNotFound) {
 		emit(transfer.Event{Event: "error", Message: err.Error()})

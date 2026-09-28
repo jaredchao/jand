@@ -316,7 +316,7 @@ func packHistory(path, jandHome, extra string) (int, error) {
 		case rel == "config.json", rel == "installed.json", strings.HasPrefix(rel, "workflows/"):
 			return true
 		case strings.HasPrefix(rel, "chats/"):
-			return strings.HasSuffix(rel, ".transcript.jsonl") || strings.HasSuffix(rel, ".html")
+			return strings.HasSuffix(rel, ".transcript.jsonl") || strings.HasSuffix(rel, ".cost.jsonl") || strings.HasSuffix(rel, ".html")
 		}
 		return false
 	})

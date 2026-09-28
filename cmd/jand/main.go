@@ -21,7 +21,7 @@ import (
 	"github.com/jaredchao/jand/internal/transfer"
 )
 
-const version = "0.4.3"
+const version = "0.4.4"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -68,7 +68,7 @@ Both clients must use the same relay and protocol version.
 The relay keeps ciphertext in RAM for at most 10 minutes.`)
 }
 
-func run(ctx context.Context, args []string, out, stderr io.Writer) int {
+func run(ctx context.Context, args []string, out, stderr io.Writer) (code int) {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
 		if len(args) > 1 {
 			return helpTopic(args[1:], out, stderr)
@@ -139,7 +139,20 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if !set["out"] && cfg.OutDir != "" {
 		*dir = cfg.OutDir
 	}
-	emit := emitter(*jsonOutput, out, stderr)
+	// send --chat starts a chat, so it opens the chat's cost record.
+	cout, cerr := &countWriter{w: out}, &countWriter{w: stderr}
+	var m chatMeter
+	if *invite {
+		defer func() { m.record("start", cout, cerr, code) }()
+	}
+	out, stderr = cout, cerr // counted for send --chat and for receiving an invite
+	base := emitter(*jsonOutput, out, stderr)
+	emit := m.watch(func(e transfer.Event) {
+		if e.Event == "queued" && e.Chat != "" {
+			m.id, m.wrote = e.Chat, int64(len(*goal))
+		}
+		base(e)
+	})
 	o := transfer.Options{RelayURL: relayURL, OutputDir: *dir, WaitTimeout: *wait, Emit: emit, Chat: *invite, Goal: *goal, Budget: *budget}
 	if sender {
 		if o.AccessToken, _, err = cfg.accessToken(); err != nil {
@@ -173,8 +186,24 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) int {
 			return 2
 		}
 		_, err = transfer.Receive(ctx, rawCode, o)
+		code = exitCode(ctx, err, emit)
+		if invited(m.events) {
+			// A chat invite opens the chat's cost record, keyed by the id
+			// the code derives; the saved event itself never names the chat.
+			transfer.RecordClaim(transfer.DefaultStateDir(), rawCode, transfer.CostRecord{Cmd: "claim", Out: cout.n + cerr.n, Exit: code})
+		}
+		return code
 	}
 	return exitCode(ctx, err, emit)
+}
+
+func invited(events []transfer.Event) bool {
+	for _, e := range events {
+		if e.Event == "saved" && e.ChatInvite {
+			return true
+		}
+	}
+	return false
 }
 
 // fromLink takes the relay and code out of a share link, so a receiver

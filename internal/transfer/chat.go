@@ -585,6 +585,8 @@ func ChatDecline(ctx context.Context, rawCode, reason string, opts Options) erro
 		return chatError(resp)
 	}
 	resp.Body.Close()
+	// Declined, the chat never exists here: drop what receiving the invite recorded.
+	os.Remove(filepath.Join(o.StateDir, chatRoomID(c)+".cost.jsonl"))
 	o.Emit(Event{Event: "declined", Chat: chatRoomID(c)})
 	return nil
 }

@@ -20,18 +20,22 @@
 
 | 项 | 怎么数 | jand 看不到的部分 |
 | --- | --- | --- |
-| 唤醒 | 每次 `chat recv` 退出计一次；其中只输出了 `no_events` 的，另计为空唤醒 | Agent 用其他方式轮询 |
-| 送进上下文的字节 | 每次对话相关的 jand 命令写到标准输出和标准错误的字节数，合计 | Agent 自己打开文件读的内容，以及 Agent 自己的思考 |
+| 唤醒 | 带 `--wait` 的 `chat recv` 每退出一次计一次；其中只输出了 `no_events` 的，另计为空唤醒。不带 `--wait` 的 `recv` 是 Agent 自己去看（比如发消息前先读），只算字节、不算唤醒；只输出了本侧自己动作的 `recv`（比如自己 close 之后收到的「已结束」）也不算 | Agent 用其他方式轮询 |
+| 送进上下文的字节 | 对话相关的 jand 命令（`send --chat`、领取对话邀请的那一次接收、`chat` 的各个子命令，包括 `chat log` 和 `chat view`）写到标准输出和标准错误的字节数，合计。`chat list` 不针对某个对话，`chat watch` 是给人看的，都不算 | Agent 自己打开文件读的内容，以及 Agent 自己的思考 |
 | 己方写出的字节 | 己方消息、完成总结、检查点原因、提议目标的正文字节数，合计 | Agent 写了但没通过 jand 发出的内容 |
-| 人的决策点 | join、decline、propose、accept、close，以及己方发起的 checkpoint，数次数 | Agent 在这些节点之外去问用户 |
+| 人的决策点 | 成功执行的 join、propose、accept、close，以及己方发起的 checkpoint，数次数。decline 之后本机没有这个对话，所以不记 | Agent 在这些节点之外去问用户 |
 | 墙钟 | 从 `started` / `joined` 到最后一条记录 | — |
 | 消息 | 双方条数（transcript 里已经有） | — |
 
 量字节，不量 token：token 数取决于对方用的是哪个模型，jand 不知道，也不该去猜。
 
-页面上，这几个数和协议结局（`all_done`、`any_done`、`budget`、`closed`、`expired`）放在最上面一张卡片里，按目标分段各给一份，每一项旁边写上「看不到」那一列。只显示原始数值，不算总分。
+页面上，这几个数和协议结局（`all_done`、`any_done`、`budget`、`closed`、`expired`）放在最上面一张卡片里，按目标分段各给一份，卡片下面有一段可以展开的说明，写明每一项怎么数、jand 看不到什么。只显示原始数值，不算总分。
 
-记录放在新文件 `$JAND_HOME/chats/<chat>.cost.jsonl` 里，权限 0600，每行一条、只追加（后台 `recv` 和前台 `send` 会同时写）。记录只有数字、子命令和时间，不含正文。`jand uninstall` 的历史备份要把它包括进去。
+记录放在新文件 `$JAND_HOME/chats/<chat>.cost.jsonl` 里，权限 0600，每行一条、只追加（后台 `recv` 和前台 `send` 会同时写）。每行是 `{time, cmd, out, wrote, empty, check, own, exit}`：`cmd` 是子命令名，发起对话的 `send --chat` 记为 `start`，领取对话邀请记为 `claim`；`out` 是输出字节，`wrote` 是己方写出的字节，`empty` 标记没有新事件，`check` 标记不带 `--wait` 的 `recv`，`own` 标记只看到本侧自己动作的 `recv`，`exit` 是退出码。
+
+领取邀请时本机还没有这个对话（要等用户同意后 join），所以 `claim` 记在由接收码算出的对话 ID 下，join 之后接着往同一个文件里写；用户拒绝（decline）时删掉这份记录。领取了却一直不答复的，会留下只有一行 `claim` 的文件，`jand uninstall` 时随对话目录一起处理。记录只有数字、子命令和时间，不含正文。`jand uninstall` 的历史备份包括它。
+
+页面怎么判断记录全不全：第一条记录是 `start`（发起方）或 `claim`（接收方），说明从对话一开始就在记，否则显示「只记录了某时刻之后的部分」。任何一行读不出来，整份记录按损坏处理，不做统计。每条记录按时间归到它所在的目标段，时间和某段开始同一秒的，归到新的那段。
 
 基线：0.4.4 只增加记录、不改协议和行为，所以它的数字就等于 0.4.3 的水平。
 

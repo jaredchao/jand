@@ -154,10 +154,36 @@ def main():
             state = json.loads((host / "chats" / f"{chat}.json").read_text(encoding="utf-8"))
             html = page.read_text(encoding="utf-8")
             assert "对齐 /users 响应字段" in html and state["token"] not in html and state["key"] not in html
+
+            # Cost record (0.4.4): this side only, numbers only, from the command that opened the chat.
+            for side, opener in ((host, "start"), (guest, "claim")):
+                path = side / "chats" / f"{chat}.cost.jsonl"
+                assert path.stat().st_mode & 0o777 == 0o600, oct(path.stat().st_mode)
+                raw = path.read_text(encoding="utf-8")
+                assert "对齐" not in raw and "/users" not in raw, "cost record holds text"
+                recs = [json.loads(line) for line in raw.splitlines()]
+                assert recs[0]["cmd"] == opener and all(r["out"] > 0 for r in recs), recs
+                assert any(r["cmd"] == "recv" for r in recs), recs
+            assert recs[1]["cmd"] == "join", recs[:2]
+            host_recs = [json.loads(line) for line in (host / "chats" / f"{chat}.cost.jsonl").read_text(encoding="utf-8").splitlines()]
+            assert host_recs[0]["wrote"] == len("对齐 /users 响应字段".encode()), host_recs[0]
+            assert {"accept", "checkpoint"} <= {r["cmd"] for r in host_recs if r["exit"] == 0}, host_recs
+            assert "本侧消耗" in html and "未记录" not in html and "只记录了" not in html
+            host_recv = [r for r in host_recs if r["cmd"] == "recv"]
+            assert host_recv[0].get("check") and not host_recv[0].get("own"), host_recv[0]  # the first recv had no --wait
+            assert any(not r.get("check") for r in host_recv), host_recv  # --wait recvs are wakes
+
+            # Receiving an invite records a claim; declining removes it, so nothing stays behind.
+            queued = events(jand(host, "send", "--chat", "--goal", "拒绝测试", "--json", "--relay", url, str(packet)))[0]
+            events(jand(guest, "--json", "--relay", url, "--out", str(root / "inbox"), queued["code"]))
+            claim = guest / "chats" / f"{queued['chat']}.cost.jsonl"
+            assert json.loads(claim.read_text(encoding="utf-8").splitlines()[0])["cmd"] == "claim"
+            events(jand(guest, "chat", "decline", "--json", "--relay", url, queued["code"]))
+            assert not claim.exists(), "claim record left after decline"
             print(json.dumps({"invite_and_join": "passed", "background_recv_woken_by_peer": f"passed ({woke:.2f}s)",
                               "progress_held_until_request": "passed", "reply_to": "passed", "both_done_pauses": "passed", "unread_blocks_exit_5": "passed", "supersedes": "passed", "closing_note_after_pause": "passed", "workflow_review_any_done": "passed",
                               "stdin_message": "passed", "checkpoint_propose_accept": "passed",
-                              "close_and_exit_code_4": "passed", "transcript": "passed", "list_and_view": "passed"}, indent=2))
+                              "close_and_exit_code_4": "passed", "transcript": "passed", "list_and_view": "passed", "cost_record": "passed"}, indent=2))
     finally:
         if relay is not None:
             relay.terminate()

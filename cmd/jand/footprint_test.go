@@ -39,6 +39,7 @@ func installed(t *testing.T) (home string) {
 	chats := filepath.Join(home, "jand", "chats")
 	os.MkdirAll(chats, 0700)
 	os.WriteFile(filepath.Join(chats, "aa.transcript.jsonl"), []byte(`{"kind":"started"}`+"\n"), 0600)
+	os.WriteFile(filepath.Join(chats, "aa.cost.jsonl"), []byte(`{"cmd":"start","out":10}`+"\n"), 0600)
 	os.WriteFile(filepath.Join(chats, "aa.html"), []byte("<html>"), 0600)
 	os.WriteFile(filepath.Join(chats, "aa.json"), []byte(`{"key":"SECRET-KEY"}`), 0600)
 	os.MkdirAll(filepath.Join(home, "jand-received", "x"), 0700)
@@ -85,7 +86,7 @@ func TestUninstallTakesBackOnlyWhatSetupPlaced(t *testing.T) {
 		t.Fatalf("archives %v\n%s", archives, out.String())
 	}
 	names, content := archiveNames(t, archives[0])
-	want := []string{"jand/chats/aa.html", "jand/chats/aa.transcript.jsonl", "jand/config.json", "jand/installed.json"}
+	want := []string{"jand/chats/aa.cost.jsonl", "jand/chats/aa.html", "jand/chats/aa.transcript.jsonl", "jand/config.json", "jand/installed.json"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("archive holds %v, want %v", names, want)
 	}

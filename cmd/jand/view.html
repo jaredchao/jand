@@ -66,6 +66,10 @@ th { color: var(--muted); font-weight: 600; border-top: none; white-space: nowra
 .event .body { color: var(--text); margin-top: 4px; font-size: 14px; }
 .outcome { margin: 8px 0 0; font-size: 13px; color: var(--muted); text-align: center; }
 .row:target .msg, .row:target .event { outline: 2px solid var(--delivery); }
+table.cost td, table.cost th { white-space: nowrap; }
+.cost-wrap { overflow-x: auto; }
+details { margin-top: 8px; } details ul { margin: 6px 0 0; padding-left: 20px; }
+code { font-size: 12px; }
 footer { color: var(--muted); font-size: 12px; margin-top: 28px; }
 @media (max-width: 560px) { .msg, .event.side { width: 100%; } }
 </style>
@@ -73,6 +77,37 @@ footer { color: var(--muted); font-size: 12px; margin-top: 28px; }
 <body>
 <main>
 <h1>jand 对话 {{.Short}}</h1>
+
+{{with .Cost}}
+<div class="card">
+  <h2>本侧消耗{{if .Outcome}} · <span class="muted">{{.Outcome}}</span>{{end}}</h2>
+  {{if eq .State "none"}}<p class="muted">这个对话没有消耗记录（开始于 jand 0.4.4 之前），下表只有时长和消息数。没有记录不等于零。</p>
+  {{else if eq .State "broken"}}<p class="wait">消耗记录读不出来（{{.Problem}}），不做统计。</p>
+  {{else if eq .State "partial"}}<p class="wait">只记录了 {{.Since}} 之后的部分，下面的数字比实际少。</p>{{end}}
+  <div class="cost-wrap"><table class="cost">
+    <tr><th></th><th>唤醒（其中空唤醒）</th><th>送进上下文</th><th>己方写出</th><th>人做决定</th><th>时长</th><th>消息</th></tr>
+    {{$known := and (ne .State "none") (ne .State "broken")}}
+    {{range .Rows}}
+    <tr>
+      <th>{{.Label}}</th>
+      {{if $known}}<td>{{.Wakes}}（{{.Empty}}）</td><td>{{.Out}}</td><td>{{.Wrote}}</td><td>{{.Decisions}}</td>
+      {{else}}<td class="muted">未记录</td><td class="muted">未记录</td><td class="muted">未记录</td><td class="muted">未记录</td>{{end}}
+      <td>{{.Wall}}</td><td>{{.Messages}}</td>
+    </tr>
+    {{end}}
+  </table></div>
+  <details class="muted">
+    <summary>这些数字怎么来的，以及 jand 看不到什么</summary>
+    <ul>
+      <li>唤醒：本机带 <code>--wait</code> 的 <code>chat recv</code> 每退出一次计一次；只报告「没有新事件」的算空唤醒。不带 <code>--wait</code> 的查看、只看到自己动作（比如自己结束对话）的，不算唤醒。看不到 Agent 用别的方式轮询。</li>
+      <li>送进上下文：本机的对话命令（包括 <code>send --chat</code>、领取邀请、<code>chat log</code>）输出给 Agent 的字节数，不是 token 数。看不到 Agent 自己打开文件读的内容，也看不到它自己的思考。</li>
+      <li>己方写出：本机发出的消息、完成总结、检查点原因、提议目标的正文字节数。</li>
+      <li>人做决定：加入、提出目标、接受、结束、发起检查点的次数。看不到 Agent 在这些之外去问用户。</li>
+      <li>只统计本机这一侧，对方花了多少不在这里。Relay 不保存任何统计。</li>
+    </ul>
+  </details>
+</div>
+{{end}}
 
 <div class="card">
   <div class="legend">

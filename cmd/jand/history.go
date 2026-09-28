@@ -130,7 +130,8 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 		if path == "" {
 			path = filepath.Join(dir, summary.ID+".html")
 		}
-		if err := writeView(path, summary, lines); err != nil {
+		recs, cerr := transfer.ChatCost(dir, summary.ID)
+		if err := writeView(path, summary, lines, recs, cerr); err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
@@ -411,6 +412,7 @@ type viewItem struct {
 
 // viewSection groups the entries worked on under one goal.
 type viewSection struct {
+	start               time.Time
 	N                   int
 	Goal, Budget, Start string
 	Messages            int
@@ -431,6 +433,7 @@ type viewData struct {
 	Sections                             []*viewSection
 	Requests                             []viewRequest
 	Pending                              int
+	Cost                                 viewCost
 }
 
 var messageAction = map[string]string{
@@ -498,7 +501,7 @@ func budgetWords(n int) string {
 
 // writeView renders the chat as one self-contained HTML page: no scripts,
 // no external resources, every piece of text escaped by html/template.
-func writeView(path string, c transfer.ChatSummary, lines []transfer.TranscriptLine) error {
+func writeView(path string, c transfer.ChatSummary, lines []transfer.TranscriptLine, recs []transfer.CostRecord, rerr error) error {
 	d := viewData{Chat: c, Short: c.ID[:8], Started: localTime(c.Started, "2006-01-02 15:04:05"),
 		Last: localTime(c.Last, "2006-01-02 15:04:05"), Budget: budgetWords(c.Budget),
 		Status: cmp.Or(statusText[c.Status], c.Status), Generated: time.Now().Format("2006-01-02 15:04:05"),
@@ -517,8 +520,8 @@ func writeView(path string, c transfer.ChatSummary, lines []transfer.TranscriptL
 	}
 	byID := map[string]*viewItem{}
 	var section *viewSection
-	newSection := func(goal string, budget int, start string) {
-		section = &viewSection{N: len(d.Sections) + 1, Goal: goal, Budget: budgetWords(budget), Start: start}
+	newSection := func(goal string, budget int, t time.Time) {
+		section = &viewSection{start: t, N: len(d.Sections) + 1, Goal: goal, Budget: budgetWords(budget), Start: localTime(t, "2006-01-02 15:04")}
 		d.Sections = append(d.Sections, section)
 	}
 	for _, l := range lines {
@@ -529,7 +532,7 @@ func writeView(path string, c transfer.ChatSummary, lines []transfer.TranscriptL
 				goal = l.Text
 			}
 			if section == nil || l.Kind == "resumed" {
-				newSection(goal, l.Budget, localTime(t, "2006-01-02 15:04"))
+				newSection(goal, l.Budget, t)
 			}
 		}
 		it := &viewItem{Time: localTime(t, "15:04:05"), Who: who(l.From), Role: l.From, Kind: l.Kind, Type: l.Type,
@@ -567,6 +570,7 @@ func writeView(path string, c transfer.ChatSummary, lines []transfer.TranscriptL
 			}
 		}
 	}
+	d.Cost = buildCost(recs, rerr, d.Sections, c.Last)
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err

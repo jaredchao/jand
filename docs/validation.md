@@ -205,3 +205,23 @@
 GitHub Release v0.4.3（预发布，7 个附件经 API 核对均已上传、大小一致）。按新用户的方式在临时 HOME 中从 GitHub 实装：`curl …/main/install.sh | sh` 下载、校验、安装成功，`setup --yes` 经公网 Relay 自检通过，`version` 显示 Relay 0.4.3 兼容。发现两处，已在 main 上修正（安装脚本修正随 main 即时生效；setup 提示语随下个版本发布）：
 - 安装脚本在没有终端的环境（如 Agent 执行）里，`[ -r /dev/tty ]` 判断通过但实际打开失败，报 `/dev/tty: Device not configured`。改为真正尝试打开 `/dev/tty`，打不开就只提示下一步。
 - `setup` 结束语仍说「接收码」、让人自己运行 `chat watch`。按「人只跟 Agent 说话」改写：交出去给链接、收进来交链接、看经过让 Agent 打开页面、轮询方式下由 Agent 在后台开提醒。
+
+## 0.4.4（开发中）：本侧消耗的简单统计
+
+按 [CORE.md](CORE.md) 实现。只增加记录和展示，协议、Relay 和原有输出都不变。
+
+- 客户端对每条对话命令统计输出字节，写进 `$JAND_HOME/chats/<chat>.cost.jsonl`（0600，只追加，不含正文）；`chat view` 顶部新增「本侧消耗」卡片，分为整个对话和各个目标。没有记录、记录从中途开始、记录损坏三种情况分别标明，不显示成 0。
+- 实现中发现并修正：`send --chat` 和 `chat send` 最初都记为 `send`，会让「记录是否从头开始」的判断把中途开始的记录误认为完整记录。改为发起对话记作 `start`。
+- 测试：`TestCostRecord`（本机没有的对话不留文件、按前缀写入、权限、损坏的行使整份记录失效）；`TestViewCost`（按手算的期望核对两个目标段的唤醒、空唤醒、决策点、字节和时长；同一秒的边界归新段；三种不完整状态不显示数字）。把分段条件从「不早于」改成「晚于」后 `TestViewCost` 失败，确认测试覆盖了边界。`uninstall` 的历史备份包含 `.cost.jsonl`。
+- `go test -race`、`go vet`、`make smoke`（交接 5 项、对话 15 项，新增 `cost_record`：双方记录权限 0600、不含目标或正文、首条分别是 `start` 与 `join`、发起方 `wrote` 等于目标的字节数）通过。
+- 兼容：`compat_smoke.py` 以 v0.4.3 标签构建的程序为旧版，新旧四种组合交接均 `delivered`，新版发起的对话邀请被 0.4.3 接收端识别。
+- 版本号改为 0.4.4，用 `release.py --targets linux-amd64,linux-arm64` 构建 Linux 包与 Relay 部署包（从未提交的工作区构建），三个包 SHA-256 校验通过，包内程序为 0.4.4。
+
+### 第一次真实使用与修正
+
+2026-09-28，本机 Claude Code（0.4.4 分支程序）作为接收方，与另一台机器上的 Codex 发起方经公网 Relay 对话两个目标（系统版本、物理内存），各 1 条交付、双方 done、`all_done` 暂停，由用户验收后本侧 close。本侧账单：唤醒 6（空 1）、送进上下文 3.0 KB、写出 736 B、人做决定 3、约 10 分钟。逐条对照原始记录无误，但暴露三处定义问题，已修正：
+
+- 发消息前「先读再回」的 `recv`（不带 `--wait`）被算成空唤醒。现在记 `check`，只算字节、不算唤醒。
+- 本侧 close 后，后台 `recv` 因收到自己的「已结束」退出，被算成一次唤醒。现在只输出本侧动作的 `recv` 记 `own`，不算唤醒。
+- 领取邀请那一步（约 500 字节）因为还没有对话 ID 而没有计入。现在用接收码算出对话 ID，记为 `claim`；拒绝时删除。接收方的记录以 `claim` 开头才算完整，以 `join` 开头的（如这次修正前的记录）标为部分记录。
+- 测试：`TestClaimRecordUsesTheChatID`、`TestMeterOwnOnlyForOurOwnActions`，`TestViewCost` 加入 `check` 与 `own` 记录（只算字节不算唤醒）以及 `claim` / `join` 开头的完整性判断；`chat_smoke.py` 的 `cost_record` 增加：接收方首条为 `claim`、次条为 `join`，不带 `--wait` 的 `recv` 记 `check`，领取后拒绝则记录被删除。`go test -race`、`go vet`、`make smoke` 通过。
