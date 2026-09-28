@@ -12,6 +12,7 @@ jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远�
 
 | 文档 | 读者 | 内容 |
 |---|---|---|
+| [docs/CORE.md](docs/CORE.md) | 开发者 | 核心方向：协作过程的消耗，量什么、记在哪、怎么比较（0.4.4 草稿） |
 | [docs/AGENT.md](docs/AGENT.md) | Agent | 操作契约：收发、对话、协作、安全约束、退出码。随发行包分发 |
 | [docs/jand-template.md](docs/jand-template.md) | 发送方 | 交接包模板，含协作分工（Collaboration）一节 |
 | [docs/HTTP_DESIGN.md](docs/HTTP_DESIGN.md) | 开发者 | 交接协议与安全边界 |
