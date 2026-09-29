@@ -225,3 +225,12 @@ GitHub Release v0.4.3（预发布，7 个附件经 API 核对均已上传、大�
 - 本侧 close 后，后台 `recv` 因收到自己的「已结束」退出，被算成一次唤醒。现在只输出本侧动作的 `recv` 记 `own`，不算唤醒。
 - 领取邀请那一步（约 500 字节）因为还没有对话 ID 而没有计入。现在用接收码算出对话 ID，记为 `claim`；拒绝时删除。接收方的记录以 `claim` 开头才算完整，以 `join` 开头的（如这次修正前的记录）标为部分记录。
 - 测试：`TestClaimRecordUsesTheChatID`、`TestMeterOwnOnlyForOurOwnActions`，`TestViewCost` 加入 `check` 与 `own` 记录（只算字节不算唤醒）以及 `claim` / `join` 开头的完整性判断；`chat_smoke.py` 的 `cost_record` 增加：接收方首条为 `claim`、次条为 `join`，不带 `--wait` 的 `recv` 记 `check`，领取后拒绝则记录被删除。`go test -race`、`go vet`、`make smoke` 通过。
+
+### 说明书按角色拆分（量出来的大头）
+
+同一次真实使用，整场对话经 jand 送进上下文的只有 3,309 字节；而 Agent 进入对话前要读的 `help agent`（core 9,288 字节）加 `help agent chat`（15,889 字节）约 25 KB，是对话本身的 7 倍多，且不在记录范围内（它不针对某个对话）。0.4.3 的分层只到主题一级，chat 一进对话就整段读完，其中「发起方」「接收方」两节每一侧只用得上一节。
+
+- `chat` 拆成三个主题：`chat-host`（发起对话：写目标、选流程、等对方加入）、`chat-guest`（收到对话邀请：给用户看、加入或拒绝）、`chat`（加入之后双方都要遵守的：收发、怎么等、协作、完成与检查点、结束）。`chat` 压短：去掉重复表述，细节交给程序的报错（如退出码 5、取代关系的拒绝）说明；规则一条未删。
+- 按需提示随之调整：`saved`（对话邀请）的 `guide` 改为 `chat-guest`；`queued`（发起对话）与接收方的 `joined` 仍为 `chat`。速查与「其他章节」改为指向对应主题。
+- 大小（字节，未配置等待方式时两种都保留）：`chat-host` 2,827，`chat-guest` 2,733，`chat` 7,909（配置 background 后约 6.2 KB），core 9,820（多了三个主题的目录行）。接收方一次对话读 core + chat-guest + chat 约 20.5 KB，原为 25.2 KB；只看对话部分，15,889 → 10,642（配置了等待方式时约 13.4 → 8.9 KB）。core 现在是最大的一块，它包含全部安全规则，这次不动。
+- 测试：`TestGuideTopics` 覆盖新主题（都是全文的一部分、不含安全契约、无残留标记），并钉住 `chat` 不含角色两节、background 渲染不超过 7,000 字节，`chat-host` / `chat-guest` 都指向 `chat`；`chat_test` 断言 `queued` 带 `guide:"chat"`、邀请的 `saved` 带 `guide:"chat-guest"`（改回 `chat` 时测试失败）。`release.py` 的标记正则支持带连字符的主题名，发行包全文渲染无残留标记。`go test -race`、`go vet`、`make smoke` 通过。

@@ -452,7 +452,7 @@ func Receive(ctx context.Context, rawCode string, opts Options) (string, error) 
 		// Only reports that the packet was claimed; joining needs the user.
 		reportOpened(ctx, c, o)
 		// No chat id here: joining takes the code, and joined returns the id.
-		saved.ChatInvite, saved.Goal, saved.Budget, saved.Guide = true, meta.Goal, meta.Budget, "chat"
+		saved.ChatInvite, saved.Goal, saved.Budget, saved.Guide = true, meta.Goal, meta.Budget, "chat-guest"
 		// The workflow and the budget the relay actually enforces come from
 		// the charter. A charter that fails its checks is reported, not
 		// hidden: the user should not join that chat.

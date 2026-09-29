@@ -68,4 +68,15 @@ func TestGuideTopics(t *testing.T) {
 			t.Errorf("topic %s is not part of the full guide", topic)
 		}
 	}
+	// A running chat is what every chat reads; how to start one or answer an
+	// invitation is read once, by one side, and stays out of it.
+	chat := renderGuide("jand", "r", "background", "chat")
+	if strings.Contains(chat, "## 发起对话") || strings.Contains(chat, "## 收到对话邀请") || len(chat) > 7000 {
+		t.Errorf("chat topic is %d bytes or carries a role section", len(chat))
+	}
+	for _, topic := range []string{"chat-host", "chat-guest"} {
+		if !strings.Contains(renderGuide("jand", "r", "", topic), "jand help agent chat`") {
+			t.Errorf("%s does not point to the chat topic", topic)
+		}
+	}
 }

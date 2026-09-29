@@ -56,14 +56,14 @@ func invite(t *testing.T, ctx context.Context, host, guest *side) (chatID, rawCo
 		t.Fatal(err)
 	}
 	queued := host.events[0]
-	if queued.Event != "queued" || len(queued.Chat) != 32 {
+	if queued.Event != "queued" || len(queued.Chat) != 32 || queued.Guide != "chat" {
 		t.Fatalf("queued: %+v", queued)
 	}
 	if _, err := Receive(ctx, queued.Code, guest.o); err != nil {
 		t.Fatal(err)
 	}
 	saved := guest.events[len(guest.events)-1]
-	if saved.Event != "saved" || !saved.ChatInvite || saved.Chat != "" || saved.Goal != testGoal || !saved.RequiresUserApproval {
+	if saved.Event != "saved" || !saved.ChatInvite || saved.Chat != "" || saved.Goal != testGoal || !saved.RequiresUserApproval || saved.Guide != "chat-guest" {
 		t.Fatalf("saved: %+v", saved)
 	}
 	return queued.Chat, queued.Code

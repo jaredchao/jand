@@ -17,7 +17,7 @@ var (
 	packagingNote = regexp.MustCompile(`(?s)<!-- packaging-note-start -->.*?<!-- packaging-note-end -->\n\n?`)
 	modeBlock     = regexp.MustCompile(`(?s)<!-- mode:(\w+) -->\n(.*?)<!-- /mode -->\n`)
 	releaseOnly   = regexp.MustCompile(`(?s)<!-- release-only -->\n.*?<!-- /release-only -->\n`)
-	topicMarker   = regexp.MustCompile(`(?m)^<!-- topic:(\w+) -->\n`)
+	topicMarker   = regexp.MustCompile(`(?m)^<!-- topic:([\w-]+) -->\n`)
 )
 
 // WakeModes are the ways an agent can wait for chat events: background (its
@@ -27,7 +27,9 @@ var wakeModes = []string{"background", "poll"}
 // guideTopics are the sections of the agent guide. core is printed by
 // default: the quick reference and every safety rule. The rest is read when
 // the work needs it, which keeps a plain receive from costing the whole guide.
-var guideTopics = []string{"core", "send", "receive", "chat", "host"}
+// chat is split by role: each side reads how to start or answer an invitation
+// once, and every side reads the rules for a running chat.
+var guideTopics = []string{"core", "send", "receive", "chat-host", "chat-guest", "chat", "host"}
 
 // renderGuide fills the agent guide template for this machine. With a wake
 // mode it keeps only that mode's sections; without one it keeps both. topic
@@ -93,7 +95,7 @@ func helpTopic(args []string, out, stderr io.Writer) int {
 	if len(args) == 2 && args[0] == "agent" && (args[1] == "all" || slices.Contains(guideTopics[1:], args[1])) {
 		topic = args[1]
 	} else if len(args) != 1 || args[0] != "agent" {
-		fmt.Fprintln(stderr, "usage: jand help agent [send|receive|chat|host|all] | jand help template")
+		fmt.Fprintln(stderr, "usage: jand help agent [send|receive|chat-host|chat-guest|chat|host|all] | jand help template")
 		return 2
 	}
 	cfg, err := loadClientConfig()
