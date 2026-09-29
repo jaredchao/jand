@@ -84,8 +84,13 @@ jand send --chat --goal '对齐 /users 响应字段' --workflow workflows/review
 #   --workflow 给名字时从 $JAND_HOME/workflows/<名字>.json 读取，给路径时直接读取
 #   输出 Link（交给对方，有效期内领取）和 Chat（自己后续命令用，不要发给对方）
 
-# 接收方：照常领取，saved 事件会带上目标、预算和流程；用户同意后加入
-jand chat join '<code>'
+# 可选：写好后续目标（计划），对方的用户加入时一并认可；--advance 定本方到检查点时怎么推进
+jand send --chat --goal '查系统版本' --plan 计划.md --advance 5m 交接.md
+#   计划.md 是一个 Markdown 列表（或 JSON 数组），每项一个目标
+#   --advance：ask 每步问人（默认）；auto 直接推进；5m 先问人，5 分钟没答复就推进
+
+# 接收方：照常领取，saved 事件会带上目标、预算、流程和计划；用户同意后加入
+jand chat join '<code>'                     # 有计划时可加 --advance，只管本方
 
 # 双方
 jand chat send --kind request <chat> '/users 返回什么结构？'        # 自动编号，如 h1
@@ -101,7 +106,8 @@ jand chat close <chat>                                            # 任何一方
 - **暂停与恢复**：双方都报告完成（或按流程任一方完成）、有人要求立即暂停、预算用完，这三种情况都会让对话暂停。只有一方提出新目标、另一方接受，双方各自的用户都同意，对话才会继续。
 - **先读再回**：对方有未读的请求、回复或交付时，发回复、请求、交付会被拒绝（退出码 5），免得回复旧版本。
 - **收尾消息**：暂停后每方还能发少量回复或留言用于收尾，不计入预算。
-- 协议与事件细节见 [CHAT_DESIGN.md](docs/CHAT_DESIGN.md)，给 Agent 的规则见 AGENT.md 的「对话」和「协作」两节。
+- **目标计划（0.4.5 起）**：开头把后续目标一次写好，对方的用户加入时认可整份计划。到了检查点，每一方按自己用户选的推进方式走：每步问人、直接推进，或先等人一段时间。只有计划里的下一个目标、逐字一致时才能不问人推进，计划外的目标一律等人；加入和结束永远不自动。自动推进在对话记录和 `chat view` 里单独标出，也不算进消耗统计里「人做决定」的次数。
+- 协议与事件细节见 [CHAT_DESIGN.md](docs/CHAT_DESIGN.md)，给 Agent 的规则见 AGENT.md 的 `chat-host`、`chat-guest`、`chat` 三节。
 
 ### 接收链接（0.4.3 起）
 
@@ -139,7 +145,7 @@ Agent 等消息有两种方式，由本机配置 `chat.wake_mode` 决定 `help a
 |---|---|---|
 | 安全底线 | 程序内，不可配置 | 加密、一次性领取、座位锁定、用户同意、不可信标记、暂停与计数机制、先读再回 |
 | Relay | `jand relay --config relay.json`（示例 [deploy/relay.json.example](deploy/relay.json.example)） | 超时、容量、默认预算、暂停后收尾消息上限；`--print-config` 查看生效值 |
-| 本地客户端 | `$JAND_HOME/config.json`，路径和生效值用 `jand config` 查看 | 默认 Relay 地址、输出目录、默认预算、默认 `--wake`、默认流程 |
+| 本地客户端 | `$JAND_HOME/config.json`，路径和生效值用 `jand config` 查看 | 默认 Relay 地址、输出目录、默认预算、默认 `--wake`、默认流程、计划的默认推进方式 |
 | 协作流程 | `send --chat --workflow <名字或路径>`，示例见 [workflows/](workflows) | 完成规则（all/any）、收尾消息条数、预算、允许的消息类型、角色、流程说明。流程随邀请加密送给对方，由对方的用户认可 |
 
 - **优先级**：命令行参数 > 环境变量（`JAND_RELAY`、`JAND_HOME`、`JAND_RELAY_CONFIG`、`JAND_ACCESS_TOKEN`）> 配置文件 > 内置默认值。

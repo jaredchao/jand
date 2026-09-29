@@ -99,6 +99,16 @@ type Event struct {
 	// charter and checked against what the relay enforces. Like the goal it
 	// is a request from the other side: agree to it only with the user.
 	Workflow *Workflow `json:"workflow,omitempty"`
+	// Plan is the host's goals after the first (invitation, join). The guest's
+	// user agrees to them word for word by joining. PlanStep marks a proposal,
+	// advance_due, advanced or resumed event as that goal of the plan,
+	// numbered as goals: the first planned goal is goal 2.
+	Plan     []PlanStep `json:"plan,omitempty"`
+	PlanStep int        `json:"plan_step,omitempty"`
+	// AdvanceAt (on a checkpoint) is when this side may take the plan's next
+	// goal without asking again, as its user allowed; Advance is that choice.
+	AdvanceAt string `json:"advance_at,omitempty"`
+	Advance   string `json:"advance,omitempty"`
 }
 
 type Options struct {
@@ -112,6 +122,10 @@ type Options struct {
 	Budget int
 	// Workflow is the host's chosen workflow; nil means DefaultWorkflow.
 	Workflow *Workflow
+	// Plan is the host's goals after the first; Advance is how this side
+	// moves on to them at a checkpoint (ask, auto or a duration; see ParseAdvance).
+	Plan    []PlanStep
+	Advance string
 	// StateDir holds local chat state; empty means DefaultStateDir().
 	StateDir string
 	// AccessToken is sent when creating a handoff or chat on a relay that
@@ -285,6 +299,16 @@ func Send(ctx context.Context, filename string, opts Options) error {
 		if err := checkGoal(o.Goal, o.Budget); err != nil {
 			return err
 		}
+		if err := checkPlan(o.Plan); err != nil {
+			return err
+		}
+		for i := range o.Plan {
+			if o.Plan[i].Budget == 0 {
+				o.Plan[i].Budget = o.Budget
+			}
+		}
+	} else if len(o.Plan) > 0 {
+		return errors.New("a plan needs --chat")
 	}
 	f, err := os.Open(filename)
 	if err != nil {
@@ -463,7 +487,7 @@ func Receive(ctx context.Context, rawCode string, opts Options) (string, error) 
 		case err != nil:
 			saved.Message = "chat invitation failed its checks, do not join: " + err.Error()
 		default:
-			saved.Workflow = &w
+			saved.Workflow, saved.Plan = &w, terms.Plan
 			if terms.Budget > 0 {
 				saved.Budget = terms.Budget
 			}

@@ -32,6 +32,9 @@ type clientConfig struct {
 		// WakeMode says how this machine's agent waits for chat events:
 		// background or poll. jand help agent prints only that way; empty prints both.
 		WakeMode string `json:"wake_mode,omitempty"`
+		// Advance is how this machine moves on to a chat's planned goals when
+		// send --chat or chat join does not say: ask, auto or a duration.
+		Advance string `json:"advance,omitempty"`
 	} `json:"chat"`
 }
 
@@ -59,6 +62,9 @@ func loadClientConfig() (clientConfig, error) {
 	}
 	if c.Chat.WakeMode != "" && !slices.Contains(wakeModes, c.Chat.WakeMode) {
 		return c, fmt.Errorf("%s: chat.wake_mode must be background or poll", clientConfigPath())
+	}
+	if _, err := transfer.ParseAdvance(c.Chat.Advance); err != nil {
+		return c, fmt.Errorf("%s: chat.%w", clientConfigPath(), err)
 	}
 	for _, k := range c.Chat.RecvWake {
 		if !slices.Contains(transfer.MessageKinds, k) {
@@ -135,6 +141,7 @@ func configCommand(args []string, out, stderr io.Writer) int {
 		"recv_wake":        c.Chat.RecvWake,
 		"default_workflow": c.Chat.DefaultWorkflow,
 		"wake_mode":        c.Chat.WakeMode,
+		"advance":          c.Chat.Advance,
 	}
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")

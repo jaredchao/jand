@@ -156,3 +156,36 @@ func TestCheckpointSaysPausedNotEnded(t *testing.T) {
 		t.Fatalf("%q", text)
 	}
 }
+
+func TestAdvanceMode(t *testing.T) {
+	var stderr bytes.Buffer
+	var cfg clientConfig
+	cfg.Chat.Advance = "auto"
+	if m, err := advanceMode("", false, cfg, &stderr); err != nil || m != "auto" {
+		t.Fatalf("config default: %q %v", m, err)
+	}
+	if m, err := advanceMode("5m", true, cfg, &stderr); err != nil || m != "5m" {
+		t.Fatalf("flag over config: %q %v", m, err)
+	}
+	if _, err := advanceMode("soon", true, cfg, &stderr); err == nil {
+		t.Fatal("bad mode accepted")
+	}
+	// A polling agent has ended its turn when the wait is over: nobody would
+	// take the step, so the wait becomes ask. auto needs no waking.
+	cfg.Chat.WakeMode = "poll"
+	if m, _ := advanceMode("5m", true, cfg, &stderr); m != "ask" || !strings.Contains(stderr.String(), "polls") {
+		t.Fatalf("poll with a wait: %q %s", m, stderr.String())
+	}
+	if m, _ := advanceMode("auto", true, cfg, &stderr); m != "auto" {
+		t.Fatalf("poll with auto: %q", m)
+	}
+
+	home := t.TempDir()
+	t.Setenv("JAND_HOME", home)
+	os.WriteFile(home+"/config.json", []byte(`{"chat":{"advance":"10s"}}`), 0600)
+	var out bytes.Buffer
+	stderr.Reset()
+	if got := run(context.Background(), []string{"config"}, &out, &stderr); got != 2 || !strings.Contains(stderr.String(), "chat.advance") {
+		t.Fatalf("bad chat.advance in config: %d %s", got, stderr.String())
+	}
+}

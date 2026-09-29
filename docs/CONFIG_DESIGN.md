@@ -84,7 +84,8 @@
   "chat": {
     "default_budget": 40,
     "recv_wake": ["request", "reply", "delivery"],
-    "default_workflow": "pair-dev"
+    "default_workflow": "pair-dev",
+    "advance": "ask"
   }
 }
 ```
@@ -92,6 +93,7 @@
 - `relay` 可以替代每次设置 `JAND_RELAY`，也解决了「发行包里是示例 IP」的首次使用问题：用户配置一次就行，而且真实地址不进仓库、也不进包。
 - 访问令牌只能以文件路径的形式配置，不直接写在 config.json 里，这样配置文件可以放心拿给别人看。
 - `recv_wake` 只是本机的默认值。不带 `--wake` 调用时生效；传 `--wake ""` 表示这次什么都唤醒。
+- `advance`（0.4.5）：对话带计划时，本方到了检查点怎么推进到计划的下一个目标——`ask` 每步问人（默认），`auto` 直接推进，或一个时长（如 `5m`，1 分钟到 6 小时）先等人答复。`send --chat` / `chat join` 的 `--advance` 优先。等待方式为 `poll` 时，时长按 `ask` 处理（Agent 问完人就结束了这一轮，超时时没人叫醒它）。见 [CORE.md](CORE.md)「0.4.5：目标计划」。
 - 客户端配置只影响本机的行为，**不影响协议，也不影响对方**。
 
 ## 第 3 层：协作流程（双方共同）

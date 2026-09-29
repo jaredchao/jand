@@ -309,12 +309,16 @@ func printBrief(out io.Writer, self string, l transfer.TranscriptLine) {
 func lineLabel(l transfer.TranscriptLine) string {
 	switch l.Kind {
 	case "started":
-		return fmt.Sprintf("started the chat (workflow %s, budget %s)", orDefault(l.Workflow), budgetText(l.Budget))
+		return fmt.Sprintf("started the chat (workflow %s, budget %s%s)", orDefault(l.Workflow), budgetText(l.Budget), planText(l))
 	case "joined":
 		if l.Text == "" && l.Workflow == "" {
 			return "joined"
 		}
-		return fmt.Sprintf("joined the chat (workflow %s, budget %s)", orDefault(l.Workflow), budgetText(l.Budget))
+		return fmt.Sprintf("joined the chat (workflow %s, budget %s%s)", orDefault(l.Workflow), budgetText(l.Budget), planText(l))
+	case "advanced":
+		return fmt.Sprintf("took plan goal %d without asking again (advance %s)", l.Step, l.Mode)
+	case "advance_off":
+		return "turned automatic advance off; every goal now needs the user"
 	case "opened":
 		return "claimed the invitation packet"
 	case "done":
@@ -416,8 +420,12 @@ type viewSection struct {
 	N                   int
 	Goal, Budget, Start string
 	Messages            int
-	Outcome             string
-	Items               []*viewItem
+	// Step is the plan goal this section works on; Auto says it was taken
+	// without asking the user again.
+	Step    int
+	Auto    string
+	Outcome string
+	Items   []*viewItem
 }
 
 type viewRequest struct {
@@ -458,12 +466,16 @@ func viewAction(l transfer.TranscriptLine, self string) string {
 		}
 		return cmp.Or(messageAction[l.Type], l.Type)
 	case "started":
-		return fmt.Sprintf("发起对话，提出目标（流程 %s，预算 %s）", orDefault(l.Workflow), budgetWords(l.Budget))
+		return fmt.Sprintf("发起对话，提出目标（流程 %s，预算 %s）%s", orDefault(l.Workflow), budgetWords(l.Budget), planWords(l))
 	case "joined":
 		if l.Text == "" && l.Workflow == "" {
 			return "同意目标，加入了对话"
 		}
-		return fmt.Sprintf("同意目标，加入对话（流程 %s，预算 %s）", orDefault(l.Workflow), budgetWords(l.Budget))
+		return fmt.Sprintf("同意目标，加入对话（流程 %s，预算 %s）%s", orDefault(l.Workflow), budgetWords(l.Budget), planWords(l))
+	case "advanced":
+		return fmt.Sprintf("按用户事先的授权（%s），没有再问用户，推进到计划中的目标 %d", advanceWords(l.Mode), l.Step)
+	case "advance_off":
+		return "用户关闭了自动推进，之后每个目标都要问用户"
 	case "opened":
 		return "领取了交接包，正在请自己的用户决定是否加入"
 	case "done":
@@ -490,6 +502,37 @@ func viewAction(l transfer.TranscriptLine, self string) string {
 		return "对话超时自动结束（" + l.Text + "）"
 	}
 	return l.Kind
+}
+
+func planText(l transfer.TranscriptLine) string {
+	if len(l.Plan) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(", plan of %d more goals, advance %s", len(l.Plan), cmp.Or(l.Mode, "ask"))
+}
+
+// planWords lists the plan on the line that agreed to it: these are the
+// goals the user allowed, word for word.
+func planWords(l transfer.TranscriptLine) string {
+	if len(l.Plan) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "；附计划 %d 个后续目标，本方推进方式：%s", len(l.Plan), advanceWords(l.Mode))
+	for i, step := range l.Plan {
+		fmt.Fprintf(&b, "\n%d. %s", i+2, step.Goal)
+	}
+	return b.String()
+}
+
+func advanceWords(mode string) string {
+	switch mode {
+	case "", "ask":
+		return "每步问用户"
+	case "auto":
+		return "直接推进"
+	}
+	return "等用户 " + mode + "，没答复就推进"
 }
 
 func budgetWords(n int) string {
@@ -524,8 +567,16 @@ func writeView(path string, c transfer.ChatSummary, lines []transfer.TranscriptL
 		section = &viewSection{start: t, N: len(d.Sections) + 1, Goal: goal, Budget: budgetWords(budget), Start: localTime(t, "2006-01-02 15:04")}
 		d.Sections = append(d.Sections, section)
 	}
+	var plan []transfer.PlanStep
+	auto := ""
 	for _, l := range lines {
 		t, _ := time.Parse(time.RFC3339, l.Time)
+		if l.Kind == "started" || l.Kind == "joined" && len(l.Plan) > 0 {
+			plan = l.Plan
+		}
+		if l.Kind == "advanced" {
+			auto = "按预授权推进（" + advanceWords(l.Mode) + "）"
+		}
 		if section == nil || l.Kind == "resumed" {
 			goal := ""
 			if l.Kind == "started" || l.Kind == "resumed" || (l.Kind == "joined" && l.Text != "") {
@@ -533,6 +584,15 @@ func writeView(path string, c transfer.ChatSummary, lines []transfer.TranscriptL
 			}
 			if section == nil || l.Kind == "resumed" {
 				newSection(goal, l.Budget, t)
+				if l.Kind == "resumed" {
+					section.Auto, auto = auto, ""
+					for i, step := range plan {
+						if step.Goal == l.Text {
+							section.Step = i + 2
+							break
+						}
+					}
+				}
 			}
 		}
 		it := &viewItem{Time: localTime(t, "15:04:05"), Who: who(l.From), Role: l.From, Kind: l.Kind, Type: l.Type,

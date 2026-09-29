@@ -1,4 +1,4 @@
-# jand 对话与协作设计（协议自 0.4.1 起未变，适用于 0.4.3）
+# jand 对话与协作设计（Relay 协议自 0.4.1 起未变；0.4.5 在章程中加入计划，适用于 0.4.5）
 
 在一次性交接之外，让两台机器上的 Agent 通过同一个 Relay 来回对话。交接文档是对话的第一条：接收方先读上下文，再由本地用户决定是否进入对话。
 
@@ -44,6 +44,19 @@ Agent 判断达成，是正常的出口；预算耗尽，是 Agent 判断失灵�
 
 **兼容**：`done_rule=any` 会产生 0.4.0 客户端不认识的 `any_done`，所以这样的对话要求加入方在请求里声明 `features: ["charter"]`，0.4.0 客户端会被 409 拒绝并得到升级提示。其他流程下 0.4.0 接收方可以加入，但看不到流程，也不执行类型限制。
 
+## 计划（0.4.5）
+
+章程可以带 `plan`：第一个目标之后的若干目标（最多 10 个，每个 `{goal, budget}`，`goal` 不超过 1 KiB；发起方把未给预算的项填成第一个目标的预算）。它和目标一起由对话密钥认证，接收方在 `saved` 中原样看到，加入即认可其中每一句。Relay 不知道也不需要知道计划：推进仍是 propose / accept。
+
+每一侧在本机对话状态里记一个推进方式（`send --chat` / `chat join` 的 `--advance`，默认取本机配置 `chat.advance`，再默认 `ask`）：`ask` 每个检查点都问人；`auto` 到了检查点即可推进；时长 `d` 先等人 `d`。推进只针对计划的下一个目标：
+
+- 发起方：检查点后到了时间，`recv` 输出 `advance_due`；Agent 若在等待期间没有得到用户的其他答复，运行 `chat advance`，客户端提出计划的下一个目标（逐字）。
+- 接收方：收到的 `proposal` 与计划的下一个目标逐字一致（目标文字相同，预算相同）时带 `plan_step`；到了时间且有这样的提议，`recv` 输出 `advance_due`，`chat advance` 接受它。计划外的提议没有 `plan_step`，`chat advance` 拒绝接受。
+- 计划的进度只在双方收到 `resumed` 且目标是计划的下一个时前进；计划外插入的目标不消耗计划。`chat advance --off` 让本对话改回每步问人。加入和结束永远不自动。
+- 状态在本机的 `<chat>.plan`（进度、本次暂停的时刻、本次是否已提议、`advance_due` 是否已给出、是否关闭）。自动推进在记录里写一行 `advanced`（`step`、`mode`），`chat view` 在对应目标段标出。
+
+兼容：章程由 `json.Unmarshal` 解析，0.4.1–0.4.4 的接收方忽略 `plan` 照常加入，每一步都问人；它收到的只是普通的提议。
+
 ## 事件
 
 `recv` 在 `--json` 模式下每行输出一个事件：
@@ -60,9 +73,12 @@ Agent 判断达成，是正常的出口；预算耗尽，是 Agent 判断失灵�
 | `resumed` | 双方 | 提议已被接受，对话恢复，带生效的 `goal` 和 `budget` |
 | `closed` | 双方 | 对方主动结束 |
 | `expired` | 双方 | 对话超时结束，`reason` 取 `unclaimed` / `no_decision` / `idle` / `lifetime` / `limit` |
+| `advance_due` | 调用方（0.4.5） | 用户允许的等待已过，可以 `chat advance` 推进到计划的下一个目标（`plan_step`、`goal`、`budget`、`advance`） |
 | `no_events` | 调用方 | `--wait` 到期，期间没有新事件 |
 
-对自己的操作，客户端输出 `sent`、`checkpoint`（`by=self`）、`proposed`、`accepted`。
+对自己的操作，客户端输出 `sent`、`checkpoint`（`by=self`）、`proposed`、`accepted`、`advanced`、`advance_off`。
+
+0.4.5 起：对话带计划时，`saved` 与接收方的 `joined` 带 `plan`（`joined` 还带本方的 `advance`）；本方可以自动推进时 `checkpoint` 带 `advance_at`；与计划下一个目标逐字一致的 `proposal`，以及由它恢复的 `resumed`，带 `plan_step`（按目标编号，计划的第一项是目标 2）。
 
 `message`、`declined`、`done` 与 `checkpoint` 的总结和 `proposal` 都带 `untrusted=true`。
 

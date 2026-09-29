@@ -21,7 +21,7 @@ import (
 	"github.com/jaredchao/jand/internal/transfer"
 )
 
-const version = "0.4.4"
+const version = "0.4.5"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -57,6 +57,10 @@ Options (before file/code):
   --goal TEXT      With --chat, required: what counts as done
   --budget N       With --chat: messages allowed for the goal (default 40, max 200)
   --workflow NAME  With --chat: a workflow from $JAND_HOME/workflows/NAME.json, or a path
+  --plan FILE      With --chat: the goals after the first (Markdown list or JSON array);
+                   the receiver's user agrees to them by joining
+  --advance MODE   With --chat: how this side moves on to planned goals at a checkpoint:
+                   ask (default), auto, or a wait such as 5m (see jand chat help)
 
 Defaults come from $JAND_HOME/config.json (see jand config); flags and
 JAND_RELAY override it. A relay that requires an access token for sending
@@ -116,6 +120,8 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) (code int) {
 	goal := fs.String("goal", "", "chat goal")
 	budget := fs.Int("budget", 0, "chat message budget")
 	workflow := fs.String("workflow", "", "chat workflow")
+	planFile := fs.String("plan", "", "chat plan file")
+	advance := fs.String("advance", "", "how to move on to planned goals")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			usage(out)
@@ -124,7 +130,7 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) (code int) {
 		usage(stderr)
 		return 2
 	}
-	if fs.NArg() != 1 || *wait < 0 || *wait > 10*time.Minute || *invite && (!sender || *wait != 0) || !*invite && (*goal != "" || *budget != 0 || *workflow != "") {
+	if fs.NArg() != 1 || *wait < 0 || *wait > 10*time.Minute || *invite && (!sender || *wait != 0) || !*invite && (*goal != "" || *budget != 0 || *workflow != "" || *planFile != "" || *advance != "") {
 		usage(stderr)
 		return 2
 	}
@@ -175,6 +181,20 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) (code int) {
 		o.Workflow = &w
 		if o.Budget == 0 && w.Budget == 0 {
 			o.Budget = cfg.Chat.DefaultBudget
+		}
+		if *planFile != "" {
+			data, err := os.ReadFile(*planFile)
+			if err == nil {
+				o.Plan, err = transfer.ParsePlan(data)
+			}
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return 2
+			}
+		}
+		if o.Advance, err = advanceMode(*advance, set["advance"], cfg, stderr); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
 		}
 	}
 	if sender {
@@ -281,7 +301,11 @@ func emitter(jsonOutput bool, out, stderr io.Writer) func(transfer.Event) {
 					return
 				}
 				printWorkflow(out, e.Workflow)
+				printPlan(out, e.Plan)
 				fmt.Fprintln(out, "Only with the local user's consent to that goal and workflow run:\n  jand chat join <code>      (or: jand chat decline [--reason TEXT] <code>)")
+				if len(e.Plan) > 0 {
+					fmt.Fprintln(out, "Joining agrees to the plan too. Ask the user how to move on to its goals: join --advance ask (every time, the default), auto, or a wait such as 5m.")
+				}
 			}
 		case "delivered":
 			fmt.Fprintf(out, "Receiver confirmed the file is saved.\nSHA-256: %s\n", e.SHA256)

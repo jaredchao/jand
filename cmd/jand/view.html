@@ -52,7 +52,7 @@ th { color: var(--muted); font-weight: 600; border-top: none; white-space: nowra
 .peer .msg { background: var(--peer-bg); }
 .head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 13px; margin-bottom: 4px; }
 .id { font-weight: 800; }
-.action { font-weight: 600; }
+.action { font-weight: 600; white-space: pre-line; }
 .k-note { color: var(--note); } .k-progress { color: var(--progress); } .k-request { color: var(--request); }
 .k-reply { color: var(--reply); } .k-delivery { color: var(--delivery); }
 .time { color: var(--muted); margin-left: auto; font-size: 12px; }
@@ -148,7 +148,7 @@ footer { color: var(--muted); font-size: 12px; margin-top: 28px; }
 {{range .Sections}}
 <div class="section">
   <div class="section-head">
-    <div class="muted">目标 {{.N}} · {{.Start}} 起 · 预算 {{.Budget}} · 本段 {{.Messages}} 条消息</div>
+    <div class="muted">目标 {{.N}}{{if .Step}}（计划中的目标 {{.Step}}）{{end}} · {{.Start}} 起 · 预算 {{.Budget}} · 本段 {{.Messages}} 条消息{{if .Auto}} · <span class="wait">{{.Auto}}</span>{{end}}</div>
     <div class="section-goal">{{if .Goal}}{{text .Goal}}{{else}}（目标未记录）{{end}}</div>
   </div>
   {{range .Items}}

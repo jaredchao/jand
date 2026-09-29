@@ -51,6 +51,10 @@ type chatState struct {
 	Key   string `json:"key"`
 	// Workflow agreed for this chat; nil in state written before 0.4.1.
 	Workflow *Workflow `json:"workflow,omitempty"`
+	// Plan is the host's goals after the first, as agreed at the start;
+	// Advance is how this side moves on to them (see plan.go).
+	Plan    []PlanStep `json:"plan,omitempty"`
+	Advance string     `json:"advance,omitempty"`
 }
 
 // MessageKinds are the purposes a message can declare. The kind travels
@@ -375,8 +379,8 @@ func createChat(ctx context.Context, c code.Code, o Options) (*chatState, error)
 		w = *o.Workflow
 	}
 	s := &chatState{ID: chatRoomID(c), Relay: o.RelayURL, Role: "host", Token: host,
-		Key: base64.RawURLEncoding.EncodeToString(key[:]), Workflow: &w}
-	plain, err := json.Marshal(charter{Protocol: charterProtocol, Goal: o.Goal, Budget: o.Budget, Workflow: w})
+		Key: base64.RawURLEncoding.EncodeToString(key[:]), Workflow: &w, Plan: o.Plan, Advance: o.Advance}
+	plain, err := json.Marshal(charter{Protocol: charterProtocol, Goal: o.Goal, Budget: o.Budget, Workflow: w, Plan: o.Plan})
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +408,7 @@ func createChat(ctx context.Context, c code.Code, o Options) (*chatState, error)
 	if err = writeJSONFile(s.path(o.StateDir, ".json"), s); err != nil {
 		return nil, fmt.Errorf("cannot save chat state: %w", err)
 	}
-	s.writeRecord(o.StateDir, TranscriptLine{From: "host", Kind: "started", Text: o.Goal, Budget: o.Budget, Workflow: w.Name})
+	s.writeRecord(o.StateDir, TranscriptLine{From: "host", Kind: "started", Text: o.Goal, Budget: o.Budget, Workflow: w.Name, Plan: o.Plan, Mode: o.Advance})
 	// An older relay ignores the terms it does not know. That is harmless
 	// for the default workflow and wrong for any other, so check.
 	if _, _, err := readCharter(ctx, c, o.RelayURL, host, o.Goal); err != nil {
@@ -464,7 +468,10 @@ func readCharter(ctx context.Context, c code.Code, relay, token, goal string) (W
 	if err := ch.matches(t); err != nil {
 		return Workflow{}, t, err
 	}
-	t.Goal = ch.Goal
+	if err := checkPlan(ch.Plan); err != nil {
+		return Workflow{}, t, err
+	}
+	t.Goal, t.Plan = ch.Goal, ch.Plan
 	return ch.Workflow, t, nil
 }
 
@@ -531,7 +538,7 @@ func ChatJoin(ctx context.Context, rawCode string, opts Options) (string, error)
 		}
 		key := c.Derive("chat/key")
 		s = &chatState{ID: id, Relay: o.RelayURL, Role: "guest", Token: guest,
-			Key: base64.RawURLEncoding.EncodeToString(key[:]), Workflow: &w}
+			Key: base64.RawURLEncoding.EncodeToString(key[:]), Workflow: &w, Plan: terms.Plan, Advance: o.Advance}
 		// Saved before the request so the token survives a lost response.
 		if err = writeJSONFile(statePath, s); err != nil {
 			return "", fmt.Errorf("cannot save chat state: %w", err)
@@ -553,9 +560,10 @@ func ChatJoin(ctx context.Context, rawCode string, opts Options) (string, error)
 	resp.Body.Close()
 	// A retried join finds the line already written.
 	if _, err := os.Stat(s.path(o.StateDir, ".transcript.jsonl")); err != nil {
-		s.writeRecord(o.StateDir, TranscriptLine{From: "guest", Kind: "joined", Text: terms.Goal, Budget: terms.Budget, Workflow: w.Name})
+		s.writeRecord(o.StateDir, TranscriptLine{From: "guest", Kind: "joined", Text: terms.Goal, Budget: terms.Budget, Workflow: w.Name, Plan: s.Plan, Mode: s.Advance})
 	}
-	o.Emit(Event{Event: "joined", Chat: s.ID, Transcript: s.path(o.StateDir, ".transcript.jsonl"), Workflow: s.Workflow, Guide: "chat"})
+	o.Emit(Event{Event: "joined", Chat: s.ID, Transcript: s.path(o.StateDir, ".transcript.jsonl"), Workflow: s.Workflow, Guide: "chat",
+		Plan: s.Plan, Advance: s.Advance})
 	return s.ID, nil
 }
 
@@ -608,6 +616,11 @@ type TranscriptLine struct {
 	// Budget and Workflow describe the goal on started and joined lines.
 	Budget   int    `json:"budget,omitempty"`
 	Workflow string `json:"workflow,omitempty"`
+	// Plan is the agreed plan, on started and joined lines. Step names the
+	// plan goal on advanced lines, and Mode this side's advance choice.
+	Plan []PlanStep `json:"plan,omitempty"`
+	Step int        `json:"step,omitempty"`
+	Mode string     `json:"mode,omitempty"`
 }
 
 func (s *chatState) record(dir, from, kind, text string) {
@@ -859,6 +872,7 @@ func pause(ctx context.Context, id, summary, action string, opts Options) error 
 	e := Event{Event: action, Chat: s.ID, By: "self", Text: summary}
 	if action == "checkpoint" {
 		e.Reason, e.Message = "goal_reached", PausedNote
+		e.AdvanceAt = stamp(s.advanceAt(s.paused(o.StateDir)))
 	}
 	o.Emit(e)
 	return nil
@@ -888,6 +902,9 @@ func ChatPropose(ctx context.Context, id, goal string, budget int, opts Options)
 		return err
 	}
 	s.record(o.StateDir, s.Role, "proposal", goal)
+	if len(s.Plan) > 0 {
+		s.updatePlan(o.StateDir, func(p *planState) { p.Proposed = true })
+	}
 	o.Emit(Event{Event: "proposed", Chat: s.ID, Goal: goal, Budget: budget})
 	return nil
 }
@@ -981,11 +998,17 @@ func ChatRecv(ctx context.Context, id string, wait time.Duration, wake []string,
 		if poll < time.Second {
 			poll = 0
 		}
+		// Waking for advance_due is jand's job, so the user's wait is kept to
+		// the second without the agent watching the clock.
+		ask := poll
+		if at, ok := s.pendingAdvance(s.loadPlan(o.StateDir), cur); ok && time.Until(at) < ask {
+			ask = max(time.Until(at), 0)
+		}
 		target, err := relayURL(s.Relay, "/v1/chats/"+s.ID+"/events")
 		if err != nil {
 			return err
 		}
-		target += "?after=" + strconv.FormatUint(cur.After, 10) + "&wait=" + strconv.Itoa(int(poll/time.Second))
+		target += "?after=" + strconv.FormatUint(cur.After, 10) + "&wait=" + strconv.Itoa(int((ask+time.Second-1)/time.Second))
 		resp, err := request(ctx, http.MethodGet, target, s.Token, nil)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -1014,6 +1037,9 @@ func ChatRecv(ctx context.Context, id string, wait time.Duration, wake []string,
 			cur.Held = append(cur.Held, ev)
 			woken = woken || wakes(ev, wake)
 			cur.After = e.Seq
+		}
+		if ev, ok := s.takeDue(o.StateDir, cur); ok {
+			cur.Held, woken = append(cur.Held, ev), true
 		}
 		if len(page.Events) > 0 {
 			if err := writeJSONFile(s.path(o.StateDir, ".cursor"), cur); err != nil {
@@ -1079,6 +1105,7 @@ func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relay
 	case "expired":
 		out.Event, out.Reason = "expired", e.Reason
 		s.record(dir, "relay", "expired", e.Reason)
+		s.ended(dir)
 	case "closed":
 		out.Event, out.By = "closed", "peer"
 		if e.From == s.Role {
@@ -1086,10 +1113,12 @@ func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relay
 		} else {
 			s.record(dir, s.peer(), "closed", "")
 		}
+		s.ended(dir)
 	case "checkpoint", "done":
 		out.Event, out.Reason = e.Type, e.Reason
 		if e.Type == "checkpoint" {
 			out.Message = PausedNote
+			out.AdvanceAt = stamp(s.advanceAt(s.paused(dir)))
 		}
 		if e.Type == "checkpoint" && e.From == "" {
 			// Relay-enforced: the budget is spent, or both sides are done.
@@ -1121,6 +1150,9 @@ func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relay
 		}
 		cur.Proposal, cur.ProposalGoal, cur.ProposalBudget = e.Seq, goal, e.Budget
 		out.Event, out.From, out.Goal, out.Budget, out.Untrusted = "proposal", s.peer(), goal, e.Budget, true
+		if p := s.loadPlan(dir); len(s.Plan) > 0 && s.planned(p, goal, e.Budget) {
+			out.PlanStep = p.Next + 2
+		}
 		s.record(dir, s.peer(), "proposal", goal)
 	case "resumed":
 		// Carries the accepted proposal, which may be this side's own; its
@@ -1138,6 +1170,15 @@ func (s *chatState) translate(dir string, key [32]byte, cur *chatCursor, e relay
 			out.By = "self"
 		}
 		s.writeRecord(dir, TranscriptLine{From: "relay", Kind: "resumed", Text: goal, Budget: e.Budget})
+		if len(s.Plan) > 0 {
+			s.updatePlan(dir, func(p *planState) {
+				if s.planned(*p, goal, e.Budget) {
+					out.PlanStep = p.Next + 2
+					p.Next++
+				}
+				p.PausedAt, p.Proposed, p.Due = 0, false, false
+			})
+		}
 	case "message", "declined":
 		kind := "message"
 		if e.Type == "declined" {

@@ -180,10 +180,40 @@ def main():
             assert json.loads(claim.read_text(encoding="utf-8").splitlines()[0])["cmd"] == "claim"
             events(jand(guest, "chat", "decline", "--json", "--relay", url, queued["code"]))
             assert not claim.exists(), "claim record left after decline"
+            # A plan (0.4.5): the receiver's user agrees to it by joining; with
+            # advance auto on both sides, goal 2 is taken without asking again.
+            plan = root / "plan.md"
+            plan.write_text("- 查物理内存\n- 汇总成一句话\n", encoding="utf-8")
+            queued = events(jand(host, "send", "--chat", "--goal", "查系统版本", "--plan", str(plan), "--advance", "auto", "--json", "--relay", url, str(packet)))[0]
+            chat3 = queued["chat"]
+            text = jand(guest, "--relay", url, "--out", str(root / "inbox"), "--", queued["code"])
+            assert "plan from sender" in text.stdout and "3. 汇总成一句话" in text.stdout and "join --advance" in text.stdout, text.stdout
+            joined = events(jand(guest, "chat", "join", "--json", "--advance", "auto", "--relay", url, queued["code"]))[0]
+            assert [s["goal"] for s in joined["plan"]] == ["查物理内存", "汇总成一句话"] and joined["advance"] == "auto", joined
+            events(jand(host, "chat", "recv", "--json", chat3))
+            for side in (guest, host):
+                events(jand(side, "chat", "done", "--json", chat3))
+            got = events(jand(host, "chat", "recv", "--json", "--wait", "5s", chat3))
+            assert [e["event"] for e in got][-2:] == ["checkpoint", "advance_due"] and got[-1]["plan_step"] == 2, got
+            early = jand(guest, "chat", "advance", chat3)
+            assert early.returncode == 1 and "not at a checkpoint" in early.stderr, early  # it has not received the pause yet
+            events(jand(host, "chat", "advance", "--json", chat3))
+            got = events(jand(guest, "chat", "recv", "--json", "--wait", "5s", chat3))
+            assert [e["event"] for e in got][-3:] == ["checkpoint", "proposal", "advance_due"] and got[-2]["plan_step"] == 2, got
+            events(jand(guest, "chat", "advance", "--json", chat3))
+            for side in (host, guest):
+                got = events(jand(side, "chat", "recv", "--json", "--wait", "5s", chat3))
+                assert got[0]["event"] == "resumed" and got[0]["goal"] == "查物理内存" and got[0]["plan_step"] == 2, got
+            recs = [json.loads(line) for line in (guest / "chats" / f"{chat3}.cost.jsonl").read_text(encoding="utf-8").splitlines()]
+            assert [r["cmd"] for r in recs].count("advance") == 2 and "accept" not in [r["cmd"] for r in recs], recs
+            page = root / "plan.html"
+            events(jand(guest, "chat", "view", "--json", "--no-open", "--out", str(page), chat3))
+            html = page.read_text(encoding="utf-8")
+            assert "计划中的目标 2" in html and "按预授权推进" in html, "view does not mark the automatic step"
             print(json.dumps({"invite_and_join": "passed", "background_recv_woken_by_peer": f"passed ({woke:.2f}s)",
                               "progress_held_until_request": "passed", "reply_to": "passed", "both_done_pauses": "passed", "unread_blocks_exit_5": "passed", "supersedes": "passed", "closing_note_after_pause": "passed", "workflow_review_any_done": "passed",
                               "stdin_message": "passed", "checkpoint_propose_accept": "passed",
-                              "close_and_exit_code_4": "passed", "transcript": "passed", "list_and_view": "passed", "cost_record": "passed"}, indent=2))
+                              "close_and_exit_code_4": "passed", "transcript": "passed", "list_and_view": "passed", "cost_record": "passed", "plan_advance": "passed"}, indent=2))
     finally:
         if relay is not None:
             relay.terminate()

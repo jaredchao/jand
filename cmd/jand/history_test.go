@@ -197,3 +197,42 @@ func TestMeterOwnOnlyForOurOwnActions(t *testing.T) {
 		}
 	}
 }
+
+func TestViewMarksPlannedAndAutomaticGoals(t *testing.T) {
+	c := transfer.ChatSummary{ID: "3323ff55ae57c7ea419a68f2e8de5f9c", Role: "guest", Relay: "https://relay.example.com",
+		Goal: "查内存", Status: "active", Started: time.Now(), Last: time.Now()}
+	plan := []transfer.PlanStep{{Goal: "查内存"}, {Goal: "汇总"}}
+	lines := []transfer.TranscriptLine{
+		{Time: "2026-09-29T01:00:00Z", From: "guest", Kind: "joined", Text: "查系统版本", Plan: plan, Mode: "5m"},
+		{Time: "2026-09-29T01:01:00Z", From: "relay", Kind: "checkpoint", Text: "all_done"},
+		{Time: "2026-09-29T01:02:00Z", From: "host", Kind: "proposal", Text: "查内存"},
+		{Time: "2026-09-29T01:07:00Z", From: "guest", Kind: "advanced", Text: "查内存", Step: 2, Mode: "5m"},
+		{Time: "2026-09-29T01:07:01Z", From: "relay", Kind: "resumed", Text: "查内存"},
+		{Time: "2026-09-29T01:08:00Z", From: "relay", Kind: "checkpoint", Text: "all_done"},
+		{Time: "2026-09-29T01:09:00Z", From: "host", Kind: "proposal", Text: "顺便查磁盘"},
+		{Time: "2026-09-29T01:10:00Z", From: "relay", Kind: "resumed", Text: "顺便查磁盘"},
+	}
+	path := filepath.Join(t.TempDir(), "view.html")
+	if err := writeView(path, c, lines, nil, os.ErrNotExist); err != nil {
+		t.Fatal(err)
+	}
+	page, _ := os.ReadFile(path)
+	text := string(page)
+	for _, want := range []string{"附计划 2 个后续目标，本方推进方式：等用户 5m，没答复就推进", "2. 查内存",
+		"目标 2（计划中的目标 2）", "按预授权推进（等用户 5m，没答复就推进）", "没有再问用户，推进到计划中的目标 2"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("page lacks %q", want)
+		}
+	}
+	// The unplanned third goal is neither marked planned nor automatic.
+	if strings.Count(text, "按预授权推进（") != 1 || strings.Contains(text, "目标 3（计划中") {
+		t.Error("an unplanned goal is marked as planned or automatic")
+	}
+	var out bytes.Buffer
+	for _, l := range lines {
+		printLine(&out, "guest", l)
+	}
+	if !strings.Contains(out.String(), "plan of 2 more goals, advance 5m") || !strings.Contains(out.String(), "took plan goal 2 without asking again") {
+		t.Fatalf("log: %s", out.String())
+	}
+}

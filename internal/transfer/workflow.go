@@ -139,6 +139,8 @@ type charter struct {
 	Goal     string   `json:"goal"`
 	Budget   int      `json:"budget,omitempty"`
 	Workflow Workflow `json:"workflow"`
+	// Plan (0.4.5) is ignored by older guests, which then ask at every step.
+	Plan []PlanStep `json:"plan,omitempty"`
 }
 
 const charterProtocol = "jand-charter/1"
@@ -150,7 +152,8 @@ type relayTerms struct {
 	PauseNotes int    `json:"pause_notes"`
 	Budget     int    `json:"budget"`
 	// Goal is the sealed charter's goal, filled in once it is verified.
-	Goal string `json:"-"`
+	Goal string     `json:"-"`
+	Plan []PlanStep `json:"-"`
 }
 
 // matches reports whether the relay enforces what the sealed charter says.

@@ -234,3 +234,16 @@ GitHub Release v0.4.3（预发布，7 个附件经 API 核对均已上传、大�
 - 按需提示随之调整：`saved`（对话邀请）的 `guide` 改为 `chat-guest`；`queued`（发起对话）与接收方的 `joined` 仍为 `chat`。速查与「其他章节」改为指向对应主题。
 - 大小（字节，未配置等待方式时两种都保留）：`chat-host` 2,827，`chat-guest` 2,733，`chat` 7,909（配置 background 后约 6.2 KB），core 9,820（多了三个主题的目录行）。接收方一次对话读 core + chat-guest + chat 约 20.5 KB，原为 25.2 KB；只看对话部分，15,889 → 10,642（配置了等待方式时约 13.4 → 8.9 KB）。core 现在是最大的一块，它包含全部安全规则，这次不动。
 - 测试：`TestGuideTopics` 覆盖新主题（都是全文的一部分、不含安全契约、无残留标记），并钉住 `chat` 不含角色两节、background 渲染不超过 7,000 字节，`chat-host` / `chat-guest` 都指向 `chat`；`chat_test` 断言 `queued` 带 `guide:"chat"`、邀请的 `saved` 带 `guide:"chat-guest"`（改回 `chat` 时测试失败）。`release.py` 的标记正则支持带连字符的主题名，发行包全文渲染无残留标记。`go test -race`、`go vet`、`make smoke` 通过。
+
+## 0.4.5：目标计划
+
+按 [CORE.md](CORE.md)「0.4.5：目标计划」实现。依据：0.4.4 第一次真实使用中，两个很小的目标约 10 分钟，两段各三四分钟在等人拍板。做法是开头把后续目标写成计划，由人认可一次；每一侧自己选到了检查点怎么推进（ask / auto / 时长）；只有与计划下一个目标逐字一致的提议才能不问人推进。Relay 不改。
+
+- 客户端：`send --chat --plan FILE --advance MODE`、`chat join --advance MODE`、`chat advance [--off]`、`chat propose --next`；本机配置 `chat.advance`。章程带 `plan`；`saved` / `joined` 带 `plan`，`checkpoint` 带 `advance_at`，计划内的 `proposal` / `resumed` 带 `plan_step`，新增 `advance_due`、`advanced`、`advance_off` 事件。计划进度在本机 `<chat>.plan`，由后台 `recv` 与前台命令各自读改写，不与游标共用文件。`recv --wait` 在 `advance_at` 到时自己醒来，Agent 不用自己计时；同一次暂停只给一次 `advance_due`。等待方式为 `poll` 时，时长按 `ask` 处理并提示。
+- 留痕：transcript 记 `advanced`（`step`、`mode`）与 `advance_off`，`started` / `joined` 行带计划与本方推进方式；`chat log` 与 `chat view` 标出「按预授权推进」和「计划中的目标 N」。消耗记录里 `advance` 单独记，不算人的决策点。
+- 说明书：`chat-host` 讲写计划、问推进方式；`chat-guest` 讲逐条给用户看、加入时带 `--advance`；`chat` 讲 `advance_due` 怎么处理（用户答复了听用户的，否则 `chat advance` 并告诉用户）。chat（background）6,884 字节，仍在 7,000 的上限内。
+- 测试：`TestParsePlan`（Markdown 各种列表写法与续行、JSON、空计划、未知字段、超长、超过 10 项、预算越界）；`TestParseAdvance`；`TestChatPlanAdvancesOnlyToThePlannedGoal`（双方 auto：发起方检查点即得 `advance_due` 且不重复；接收方在对方提议前不能推进；计划内提议带 `plan_step`、双方 `resumed` 带 `plan_step`；用户手动提出的计划外目标没有 `plan_step`、`advance` 拒绝接受、发起方提出过目标后不能再 `advance`；计划外目标走完后计划仍从目标 3 继续；预算改了的提议不算计划内；`NextPlanStep` 逐字提出后算；计划走完后不再推进；transcript 的 `advanced` 行）；`TestChatPlanWaitsForTheUserFirst`（时长模式下 `advance_at` 约一分钟后、提前 `advance` 报「not yet」、`recv --wait 30s` 在到时后几秒内自己返回 `advance_due`、ask 一方只标记不推进）；`TestChatPlanAdvanceOff`；`TestPlanNeedsChat`；`TestAdvanceMode`（配置默认、参数优先、poll 下时长变 ask 而 auto 不变、配置写错报错）；`TestViewMarksPlannedAndAutomaticGoals`。
+- 反向检查（把实现改坏，确认测试会失败）：比对忽略预算、`advance_due` 可重复、接收方无提议也到期、未到时间也能 `advance`、接收方接受计划外提议、忽略 `--off`、计划外目标也推进计划进度——七处各自都有测试失败。
+- `chat_smoke` 新增 `plan_advance`（真实程序：Markdown 计划、文本输出里列出计划与 `--advance` 提示、双方 auto 推进到目标 2、接收方未收到暂停前 `advance` 报「not at a checkpoint」、消耗记录里 `advance` 两次且没有 `accept`、view 标出自动推进）。
+- 兼容：用 main（0.4.4，`56aa927`）构建的程序当接收方，加入新版发起的带计划对话；发起方 auto 推进后，旧接收方收到的是没有 `plan_step` 的普通提议，由用户手动接受，双方 `resumed` 正常。`compat_smoke.py` 以该程序为旧版，新旧四种组合交接均 `delivered`，对话邀请被旧接收端识别。
+- `go test -race`、`go vet`、`make smoke`（交接 5 项、对话 16 项）通过。版本号改为 0.4.5。
