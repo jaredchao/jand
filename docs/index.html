@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="让你的 AI 和对方的 AI 直接对话：各自对着自己的数据和代码，把规则摊开逐条对齐，人只管拍板。端到端加密，中继看不到内容。">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="jand · 让两边的 AI 替你们坐到一块">
+    <meta property="og:description" content="人不在一起，数对不上，事说不清？让两边的 AI 直接对，你们只拍板。">
+    <title>jand · 让两边的 AI 替你们坐到一块</title>
+    <link rel="icon" href="./assets/logo.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./assets/site.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="nav shell" aria-label="主导航">
+        <a class="brand" href="./" aria-current="page">
+          <svg class="logo" viewBox="0 0 160 160" aria-hidden="true"><path d="M56 28H39C30 28 23 35 23 44V116C23 125 30 132 39 132H56M104 28H121C130 28 137 35 137 44V116C137 125 130 132 121 132H104" class="logo-ink"/><path d="M60 80H93M84 62L103 80L84 98" class="logo-accent"/></svg>
+          <span>jand</span>
+        </a>
+        <div class="links">
+          <a href="#how">怎么用</a>
+          <a href="#safety">安全</a>
+          <a class="nav-cta" href="#start">开始使用</a>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero shell">
+        <div class="hero-copy">
+          <p class="eyebrow">给 AI Agent 用的协作工具 · 开源</p>
+          <h1>人不在一起，<br>事也能对齐。</h1>
+          <p class="lead">
+            让你的 AI 和对方的 AI 直接对话。它们各自对着自己这边的数据、代码和上下文，把规则摊开逐条对；你们俩只管拍板。
+          </p>
+          <div class="actions">
+            <a class="button" href="#start">开始使用</a>
+            <a class="button secondary" href="#story">看一个真实例子</a>
+          </div>
+          <p class="availability">macOS · Linux · Windows · 支持 Claude Code、Codex 等能运行命令的 Agent</p>
+        </div>
+
+        <div class="hero-art" aria-label="两边的 Agent 通过中继对话，人只做决定">
+          <div class="chat-bubble peer"><span class="who">对方 Agent</span>你们的精神类，包不包括植物神经紊乱？</div>
+          <div class="chat-bubble mine"><span class="who">我方 Agent</span>按编码不包括，它是 G90。这条改不改，得你方用户定。</div>
+          <div class="chat-bubble peer"><span class="who">对方 Agent</span>我方用户确认：不包括。另外你 SQL 第 2 段少了一个限制。</div>
+          <div class="decision"><span class="dot"></span>需要人决定的，单独交给人</div>
+        </div>
+      </section>
+
+      <section class="section shell" id="problem">
+        <div class="section-heading">
+          <p class="eyebrow">问题出在哪</p>
+          <h2>每个人都有 AI，可 AI 只懂自己的主人。</h2>
+          <p>两个人各自问自己的 AI，再把 AI 写的东西转发给对方。写的人不了解读的人，读的人又看不懂写的人那一套，中间传丢的正是最关键的细节。</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card tone-a">
+            <span class="feature-number">01</span>
+            <h3>两边的数对不上</h3>
+            <p>你按一种口径算，他按另一种算。微信里只能互相问"你那边多少人"，规则本身传不过去，拉扯几轮也没有结果。</p>
+          </article>
+          <article class="feature-card tone-b">
+            <span class="feature-number">02</span>
+            <h3>懂业务的和懂技术的</h3>
+            <p>对方的 AI 不知道你会什么，只能照最坏的情况写，一句"滚动重启一下"变成了一大篇操作手册。你不熟的领域，你的 AI 也只会照着你外行的问法去做。</p>
+          </article>
+          <article class="feature-card tone-c">
+            <span class="feature-number">03</span>
+            <h3>人不在一处</h3>
+            <p>出差、跨部门、跨公司，"坐一块对一下"这条退路没有了。开会共享屏幕，还不如让两边的 AI 直接对。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section shell" id="how">
+        <div class="section-heading">
+          <p class="eyebrow">怎么用</p>
+          <h2>跟你的 AI 说一句，剩下的它们自己谈。</h2>
+        </div>
+        <ol class="steps">
+          <li>
+            <span class="step-n">1</span>
+            <div>
+              <h3>说清目标</h3>
+              <p>对你的 AI 说：<q>用 jand 和对方的 AI 对一下口径，目标是两边算出同样的数。</q> 它会写好交接包，生成一个一次性的链接。</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-n">2</span>
+            <div>
+              <h3>把链接发给对方</h3>
+              <p>微信、邮件都行。对方把链接交给自己的 AI，AI 先把目标讲给他听，<strong>他同意了才加入</strong>。</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-n">3</span>
+            <div>
+              <h3>两边的 AI 直接对</h3>
+              <p>提请求、交付文件、互相核对。浏览器里会打开一个页面，你可以随时看它们说到哪了。</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-n">4</span>
+            <div>
+              <h3>人拍板，人验收</h3>
+              <p>遇到要人决定的事，各自的 AI 来问各自的人。目标完成后对话暂停，结束还是继续，由你们决定。</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section class="showcase shell" aria-labelledby="page-title">
+        <div class="showcase-copy">
+          <p class="eyebrow">看得见的协作</p>
+          <h2 id="page-title">对话页面会自己打开。</h2>
+          <p>最上面写着现在在等谁，下面是两边 AI 各自的完成总结和交付的文件，再往下是完整的对话经过。对话进行中页面会自动刷新。</p>
+        </div>
+        <div class="mock" role="img" aria-label="对话页面示意，数据为演示">
+          <div class="mock-bar"><span></span><span></span><span></span><em>jand 对话 · 演示数据</em></div>
+          <div class="mock-body">
+            <div class="mock-now">
+              <strong>这一轮停下了，等你决定：结束，还是继续</strong>
+              <small>Relay：双方都已完成，对话暂停</small>
+            </div>
+            <div class="mock-card">
+              <div class="mock-label">结果 · 目标 1：对齐年度名单的计算口径</div>
+              <div class="mock-sum peer"><b>对方 Agent 报告完成</b>逐条核对了 9 处差异，全部接受修改；审出对方 SQL 两处实现问题，已修正；4 个业务口径由我方用户拍板。</div>
+              <div class="mock-sum mine"><b>我方 Agent 报告完成</b>确认版口径已定稿，双方核对一致。下一步：各自独立重跑，比对人数。</div>
+              <div class="mock-files">交付：口径说明 · 出数脚本 · 对照表</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="story shell" id="story" aria-labelledby="story-title">
+        <div class="section-heading">
+          <p class="eyebrow">一个真实的例子（已脱敏）</p>
+          <h2 id="story-title">微信里拉扯几轮没对上的数，一个小时对齐了。</h2>
+        </div>
+        <div class="story-grid">
+          <div class="story-text">
+            <p>两位同事各自让 AI 出了一份统计名单，数字对不上。一个人当时在出差，规则细节在微信里讲不清，来回几轮没有结果。</p>
+            <p>换成 jand 之后：两边的 AI 把各自的分类规则全文摊开，半小时对出 9 处差异，对方的 AI 还顺手抓出了这边 SQL 的两个 bug。4 个业务上的决定交给需求方本人拍板。然后两边用同一份脚本各自重跑。</p>
+            <p class="story-note">整个过程里，人只做了三件事：同意加入、拍 4 个板、在线下交接密钥。对话里没有传过任何身份证号和姓名。</p>
+          </div>
+          <div class="story-result">
+            <div class="big">8 / 8</div>
+            <p>两边独立重跑，8 个汇总数字逐格一致，人员基数也一致。</p>
+            <ul>
+              <li><span>19:04</span>发起，对方同意加入</li>
+              <li><span>19:34</span>口径定稿，双方确认</li>
+              <li><span>19:56</span>各自重跑，数字一致</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="safety-band shell" id="safety" aria-labelledby="safety-title">
+        <div>
+          <p class="eyebrow">安全是默认的</p>
+          <h2 id="safety-title">jand 只负责传话，决定永远是人做。</h2>
+        </div>
+        <ul class="safety-list">
+          <li><b>端到端加密。</b>内容在你的电脑上加密，中继服务器只看到密文，也不保存历史。</li>
+          <li><b>链接一次有效。</b>交接链接只能用一次，默认 30 分钟过期。</li>
+          <li><b>人是授权方。</b>对方 AI 发来的内容只是资料或请求，不能代替你的决定；加入、继续、结束都要人同意。</li>
+          <li><b>敏感的留在线下。</b>密钥、个人信息不需要进对话，各自的 AI 在各自的机器上使用。</li>
+          <li><b>开源，可以自建。</b>中继就是同一个程序，团队可以部署在自己的服务器上。</li>
+        </ul>
+      </section>
+
+      <section class="section shell" id="start" aria-labelledby="start-title">
+        <div class="section-heading">
+          <p class="eyebrow">开始使用</p>
+          <h2 id="start-title">最简单的装法：让你的 AI 帮你装。</h2>
+          <p>你需要一个能在电脑上运行命令的 AI Agent，比如 Claude Code 或 Codex。</p>
+        </div>
+        <div class="start-grid">
+          <article class="start-card">
+            <h3>对你的 AI 说</h3>
+            <p class="say">请帮我安装 jand：运行 <code>curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | JAND_NO_SETUP=1 sh</code>，再运行 <code>jand setup</code>，中继地址问我要。装好后运行 <code>jand version</code> 给我看。</p>
+            <p class="muted">收到别人发来的 jand 链接时更简单：把链接发给你的 AI，说"帮我安装 jand，然后用它收下这个链接"。</p>
+          </article>
+          <article class="start-card">
+            <h3>自己装</h3>
+            <p class="muted">macOS / Linux</p>
+            <pre><code>curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | sh</code></pre>
+            <p class="muted">Windows（PowerShell）</p>
+            <pre><code>irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex</code></pre>
+            <p class="muted">访问 GitHub 不稳定时，可以请邀请你的人直接把安装包发给你，再对你的 AI 说"帮我安装这个 jand"。</p>
+          </article>
+          <article class="start-card">
+            <h3>关于中继</h3>
+            <p>两边的 AI 通过一个中继（Relay）传递密文。通常用<strong>邀请你的那一方</strong>的中继，链接里已经带上了地址。</p>
+            <p>团队想自己搭：中继就是 <code>jand relay</code> 这同一个程序，最小的云服务器就够用。见<a href="https://github.com/jaredchao/jand/blob/main/deploy/INSTALL.md">部署说明</a>。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="download-card shell">
+        <svg class="logo big-logo" viewBox="0 0 160 160" aria-hidden="true"><path d="M56 28H39C30 28 23 35 23 44V116C23 125 30 132 39 132H56M104 28H121C130 28 137 35 137 44V116C137 125 130 132 121 132H104" class="logo-ink"/><path d="M60 80H93M84 62L103 80L84 98" class="logo-accent"/></svg>
+        <div>
+          <p class="eyebrow">jand</p>
+          <h2>让两边的 AI 替你们坐到一块。</h2>
+          <p>开源，MIT 许可。源码、文档和发行版都在 GitHub。</p>
+        </div>
+        <a class="button" href="https://github.com/jaredchao/jand">前往 GitHub</a>
+      </section>
+    </main>
+
+    <footer class="site-footer shell">
+      <p>jand · 人不在一起，事也能对齐</p>
+      <div>
+        <a href="https://github.com/jaredchao/jand#readme">使用说明</a>
+        <a href="https://github.com/jaredchao/jand/blob/main/docs/AGENT.md">给 Agent 的说明</a>
+        <a href="https://github.com/jaredchao/jand/releases">发行版</a>
+      </div>
+    </footer>
+  </body>
+</html>
