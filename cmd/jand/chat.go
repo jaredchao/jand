@@ -44,6 +44,9 @@ See what happened (local record only; nothing is fetched from the relay):
                                                new entries as your side sends and receives
   jand chat view [--out FILE] [--no-open] <chat>
                                                write the timeline as one HTML page and open it
+                                               (the same page is kept current after every chat
+                                               command and opened once at send --chat / join;
+                                               config chat.page or JAND_PAGE: open, update, off)
   jand chat watch [--notify] <chat>            for the person, in their own terminal: rings when
                                                the peer sent something your agent has not read yet
                                                (it only looks; the agent still receives everything);
@@ -104,6 +107,9 @@ func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
 	code := chatRun(ctx, args, cout, cerr, &m)
 	if len(args) > 0 {
 		m.record(args[0], cout, cerr, code)
+		if args[0] != "log" && args[0] != "view" {
+			refreshPage(m.id, args[0] == "join" && code == 0)
+		}
 	}
 	return code
 }
@@ -325,6 +331,8 @@ func readText(path string, r io.Reader) (string, error) {
 // printable keeps remote text from driving the terminal: control characters
 // other than newline and tab are replaced.
 func printable(s string) string {
+	// A CRLF line end is a line end; a lone \r could rewrite a terminal line.
+	s = strings.ReplaceAll(s, "\r\n", "\n")
 	return strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\t' {
 			return r

@@ -16,7 +16,7 @@ from smoke import BIN, first_line
 
 
 def jand(home, *args, timeout=15):
-    env = dict(os.environ, JAND_HOME=str(home))
+    env = dict(os.environ, JAND_HOME=str(home), JAND_PAGE="update")  # keep the page, never open a browser
     env.pop("JAND_RELAY", None)
     return subprocess.run([str(BIN), *args], capture_output=True, text=True, timeout=timeout, env=env)
 
@@ -47,10 +47,14 @@ def main():
             joined = events(jand(guest, "chat", "join", "--json", "--relay", url, queued["code"]))[0]
             assert joined["event"] == "joined"
             assert [e["event"] for e in events(jand(host, "chat", "recv", "--json", chat))] == ["joined"]
+            # Each side's chat page is written by the commands themselves and reloads while the chat lives.
+            for side in (host, guest):
+                page = next((side / "chats").glob(chat + ".html")).read_text(encoding="utf-8")
+                assert "两边的 Agent 正在协作" in page and 'http-equiv="refresh"' in page, side
 
             # The pattern an agent host uses: a background recv that exits
             # when the peer speaks.
-            env = dict(os.environ, JAND_HOME=str(guest))
+            env = dict(os.environ, JAND_HOME=str(guest), JAND_PAGE="update")
             waiting = subprocess.Popen([str(BIN), "chat", "recv", "--json", "--wait", "2m", "--wake", "request", chat], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
             events(jand(host, "chat", "send", "--json", "--kind", "progress", chat, "前端骨架已完成"))
             time.sleep(1.5)
@@ -121,6 +125,8 @@ def main():
             assert got[0]["event"] == "closed" and got[0]["by"] == "peer"
             late = jand(host, "chat", "send", chat, "还在吗")
             assert late.returncode == 4, late
+            page = (host / "chats" / (chat + ".html")).read_text(encoding="utf-8")
+            assert "对话已结束" in page and 'http-equiv="refresh"' not in page and "后端完成" in page, "host page after close"
 
             # A workflow from the repository: review, where the implementer's done pauses at once.
             review = pathlib.Path(__file__).resolve().parents[1] / "workflows" / "review.json"

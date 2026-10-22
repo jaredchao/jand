@@ -35,6 +35,9 @@ type clientConfig struct {
 		// Advance is how this machine moves on to a chat's planned goals when
 		// send --chat or chat join does not say: ask, auto or a duration.
 		Advance string `json:"advance,omitempty"`
+		// Page is what happens to the chat's page in a browser: open (the
+		// default), update or off. See page.go.
+		Page string `json:"page,omitempty"`
 	} `json:"chat"`
 }
 
@@ -62,6 +65,9 @@ func loadClientConfig() (clientConfig, error) {
 	}
 	if c.Chat.WakeMode != "" && !slices.Contains(wakeModes, c.Chat.WakeMode) {
 		return c, fmt.Errorf("%s: chat.wake_mode must be background or poll", clientConfigPath())
+	}
+	if c.Chat.Page != "" && !slices.Contains(pageModes, c.Chat.Page) {
+		return c, fmt.Errorf("%s: chat.page must be open, update or off", clientConfigPath())
 	}
 	if _, err := transfer.ParseAdvance(c.Chat.Advance); err != nil {
 		return c, fmt.Errorf("%s: chat.%w", clientConfigPath(), err)
@@ -142,6 +148,7 @@ func configCommand(args []string, out, stderr io.Writer) int {
 		"default_workflow": c.Chat.DefaultWorkflow,
 		"wake_mode":        c.Chat.WakeMode,
 		"advance":          c.Chat.Advance,
+		"page":             c.pageMode(),
 	}
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")

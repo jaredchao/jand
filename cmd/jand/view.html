@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-<title>jand 对话 {{.Short}}</title>
+{{if .Live}}<meta http-equiv="refresh" content="10">
+{{end}}<title>jand 对话 {{.Short}}</title>
 <style>
 :root {
   --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #e2e5eb;
@@ -71,6 +72,16 @@ table.cost td, table.cost th { white-space: nowrap; }
 details { margin-top: 8px; } details ul { margin: 6px 0 0; padding-left: 20px; }
 code { font-size: 12px; }
 footer { color: var(--muted); font-size: 12px; margin-top: 28px; }
+.now { border-left: 6px solid var(--muted); }
+.now.live { border-left-color: var(--me); } .now.act { border-left-color: var(--request); background: var(--warn-bg); }
+.now.wait { border-left-color: var(--wait); } .now.done { border-left-color: var(--ok); }
+.now-title { font-size: 18px; font-weight: 700; margin: 0 0 4px; }
+.now-detail { white-space: pre-wrap; overflow-wrap: anywhere; }
+.result + .result { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+.summary { margin: 8px 0; padding: 8px 12px; border-radius: 8px; background: var(--peer-bg); }
+.summary.mine { background: var(--me-bg); }
+.summary .body { margin-top: 4px; }
+.result ul { margin: 4px 0 0; padding-left: 20px; font-size: 14px; }
 @media (max-width: 560px) { .msg, .event.side { width: 100%; } }
 </style>
 </head>
@@ -78,36 +89,32 @@ footer { color: var(--muted); font-size: 12px; margin-top: 28px; }
 <main>
 <h1>jand 对话 {{.Short}}</h1>
 
-{{with .Cost}}
+<div class="card now {{.Now.Tone}}">
+  <div class="now-title">{{.Now.Title}}</div>
+  {{if .Now.Detail}}<div class="now-detail">{{text .Now.Detail}}</div>{{end}}
+  {{if .Live}}<div class="muted" style="margin-top:8px">页面每 10 秒自动刷新。这里只有你的 Agent 已经收到的内容。</div>{{end}}
+</div>
+
+{{if .Results}}
 <div class="card">
-  <h2>本侧消耗{{if .Outcome}} · <span class="muted">{{.Outcome}}</span>{{end}}</h2>
-  {{if eq .State "none"}}<p class="muted">这个对话没有消耗记录（开始于 jand 0.4.4 之前），下表只有时长和消息数。没有记录不等于零。</p>
-  {{else if eq .State "broken"}}<p class="wait">消耗记录读不出来（{{.Problem}}），不做统计。</p>
-  {{else if eq .State "partial"}}<p class="wait">只记录了 {{.Since}} 之后的部分，下面的数字比实际少。</p>{{end}}
-  <div class="cost-wrap"><table class="cost">
-    <tr><th></th><th>唤醒（其中空唤醒）</th><th>送进上下文</th><th>己方写出</th><th>人做决定</th><th>时长</th><th>消息</th></tr>
-    {{$known := and (ne .State "none") (ne .State "broken")}}
-    {{range .Rows}}
-    <tr>
-      <th>{{.Label}}</th>
-      {{if $known}}<td>{{.Wakes}}（{{.Empty}}）</td><td>{{.Out}}</td><td>{{.Wrote}}</td><td>{{.Decisions}}</td>
-      {{else}}<td class="muted">未记录</td><td class="muted">未记录</td><td class="muted">未记录</td><td class="muted">未记录</td>{{end}}
-      <td>{{.Wall}}</td><td>{{.Messages}}</td>
-    </tr>
+  <h2>结果</h2>
+  {{range .Results}}
+  <div class="result">
+    <div class="muted">目标 {{.N}} · {{.Outcome}}</div>
+    <div class="section-goal">{{if .Goal}}{{.Goal}}{{else}}（目标未记录）{{end}}</div>
+    {{range .Summaries}}
+    <div class="summary {{if .Mine}}mine{{end}}">
+      <span class="chip {{if .Mine}}me{{else}}peer{{end}}">{{.Who}}</span> <span class="muted">报告完成 · {{.Time}}</span>
+      <div class="body">{{text .Text}}</div>
+    </div>
     {{end}}
-  </table></div>
-  <details class="muted">
-    <summary>这些数字怎么来的，以及 jand 看不到什么</summary>
-    <ul>
-      <li>唤醒：本机带 <code>--wait</code> 的 <code>chat recv</code> 每退出一次计一次；只报告「没有新事件」的算空唤醒。不带 <code>--wait</code> 的查看、只看到自己动作（比如自己结束对话）的，不算唤醒。看不到 Agent 用别的方式轮询。</li>
-      <li>送进上下文：本机的对话命令（包括 <code>send --chat</code>、领取邀请、<code>chat log</code>）输出给 Agent 的字节数，不是 token 数。看不到 Agent 自己打开文件读的内容，也看不到它自己的思考。</li>
-      <li>己方写出：本机发出的消息、完成总结、检查点原因、提议目标的正文字节数。</li>
-      <li>人做决定：加入、提出目标、接受、结束、发起检查点的次数。看不到 Agent 在这些之外去问用户。</li>
-      <li>只统计本机这一侧，对方花了多少不在这里。Relay 不保存任何统计。</li>
-    </ul>
-  </details>
+    {{if .Deliveries}}<div class="muted" style="margin-top:8px">交付（已被取代的不列）</div>
+    <ul>{{range .Deliveries}}<li><a href="#{{.ID}}">{{.ID}}</a> <span class="chip {{if .Mine}}me{{else}}peer{{end}}">{{.Who}}</span> {{.Summary}}</li>{{end}}</ul>{{end}}
+  </div>
+  {{end}}
 </div>
 {{end}}
+
 
 <div class="card">
   <div class="legend">
@@ -182,6 +189,37 @@ footer { color: var(--muted); font-size: 12px; margin-top: 28px; }
 </div>
 {{else}}
 <div class="card">还没有记录。</div>
+{{end}}
+
+{{with .Cost}}
+<div class="card">
+  <h2>本侧消耗{{if .Outcome}} · <span class="muted">{{.Outcome}}</span>{{end}}</h2>
+  {{if eq .State "none"}}<p class="muted">这个对话没有消耗记录（开始于 jand 0.4.4 之前），下表只有时长和消息数。没有记录不等于零。</p>
+  {{else if eq .State "broken"}}<p class="wait">消耗记录读不出来（{{.Problem}}），不做统计。</p>
+  {{else if eq .State "partial"}}<p class="wait">只记录了 {{.Since}} 之后的部分，下面的数字比实际少。</p>{{end}}
+  <div class="cost-wrap"><table class="cost">
+    <tr><th></th><th>唤醒（其中空唤醒）</th><th>送进上下文</th><th>己方写出</th><th>人做决定</th><th>时长</th><th>消息</th></tr>
+    {{$known := and (ne .State "none") (ne .State "broken")}}
+    {{range .Rows}}
+    <tr>
+      <th>{{.Label}}</th>
+      {{if $known}}<td>{{.Wakes}}（{{.Empty}}）</td><td>{{.Out}}</td><td>{{.Wrote}}</td><td>{{.Decisions}}</td>
+      {{else}}<td class="muted">未记录</td><td class="muted">未记录</td><td class="muted">未记录</td><td class="muted">未记录</td>{{end}}
+      <td>{{.Wall}}</td><td>{{.Messages}}</td>
+    </tr>
+    {{end}}
+  </table></div>
+  <details class="muted">
+    <summary>这些数字怎么来的，以及 jand 看不到什么</summary>
+    <ul>
+      <li>唤醒：本机带 <code>--wait</code> 的 <code>chat recv</code> 每退出一次计一次；只报告「没有新事件」的算空唤醒。不带 <code>--wait</code> 的查看、只看到自己动作（比如自己结束对话）的，不算唤醒。看不到 Agent 用别的方式轮询。</li>
+      <li>送进上下文：本机的对话命令（包括 <code>send --chat</code>、领取邀请、<code>chat log</code>）输出给 Agent 的字节数，不是 token 数。看不到 Agent 自己打开文件读的内容，也看不到它自己的思考。</li>
+      <li>己方写出：本机发出的消息、完成总结、检查点原因、提议目标的正文字节数。</li>
+      <li>人做决定：加入、提出目标、接受、结束、发起检查点的次数。看不到 Agent 在这些之外去问用户。</li>
+      <li>只统计本机这一侧，对方花了多少不在这里。Relay 不保存任何统计。</li>
+    </ul>
+  </details>
+</div>
 {{end}}
 
 <footer>{{.Generated}} 由 jand 根据本机的对话记录生成（$JAND_HOME/chats）。只包含本机到目前为止发出和收到的内容；Relay 不保存任何历史。</footer>

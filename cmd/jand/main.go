@@ -149,7 +149,10 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) (code int) {
 	cout, cerr := &countWriter{w: out}, &countWriter{w: stderr}
 	var m chatMeter
 	if *invite {
-		defer func() { m.record("start", cout, cerr, code) }()
+		defer func() {
+			m.record("start", cout, cerr, code)
+			refreshPage(m.id, code == 0)
+		}()
 	}
 	out, stderr = cout, cerr // counted for send --chat and for receiving an invite
 	base := emitter(*jsonOutput, out, stderr)

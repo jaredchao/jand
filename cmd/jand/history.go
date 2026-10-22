@@ -442,6 +442,26 @@ type viewData struct {
 	Requests                             []viewRequest
 	Pending                              int
 	Cost                                 viewCost
+	// Live makes the page reload itself while the chat can still change.
+	Live    bool
+	Now     viewNow
+	Results []viewResult
+}
+
+// viewNow heads the page: where the chat stands and whether the person
+// reading it is the one it waits for. Tone is live, wait, act or done.
+type viewNow struct {
+	Tone, Title, Detail string
+}
+
+// viewResult is what one finished goal left behind, for a reader who skips
+// the timeline: each side's own summary and the deliveries still standing.
+type viewResult struct {
+	N          int
+	Goal       string
+	Outcome    string
+	Summaries  []*viewItem
+	Deliveries []viewRequest
 }
 
 var messageAction = map[string]string{
@@ -568,6 +588,7 @@ func writeView(path string, c transfer.ChatSummary, lines []transfer.TranscriptL
 		d.Sections = append(d.Sections, section)
 	}
 	var plan []transfer.PlanStep
+	var proposal *viewItem // a next goal nobody has accepted yet
 	auto := ""
 	for _, l := range lines {
 		t, _ := time.Parse(time.RFC3339, l.Time)
@@ -616,6 +637,12 @@ func writeView(path string, c transfer.ChatSummary, lines []transfer.TranscriptL
 		if l.Kind == "checkpoint" || l.Kind == "closed" || l.Kind == "expired" {
 			section.Outcome = it.Who + "：" + it.Action
 		}
+		switch l.Kind {
+		case "proposal":
+			proposal = it
+		case "resumed", "closed", "expired", "decline":
+			proposal = nil
+		}
 		section.Items = append(section.Items, it)
 	}
 	for _, sec := range d.Sections {
@@ -631,15 +658,85 @@ func writeView(path string, c transfer.ChatSummary, lines []transfer.TranscriptL
 		}
 	}
 	d.Cost = buildCost(recs, rerr, d.Sections, c.Last)
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	d.Results = viewResults(d.Sections)
+	d.Now = viewNowFor(c, d, proposal)
+	d.Live = c.Status == "waiting" || c.Status == "active" || c.Status == "paused"
+	// The page may be open in a browser that reloads it at any moment, so it
+	// is replaced whole rather than rewritten in place.
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
+	defer os.Remove(f.Name())
 	if err := viewTemplate.Execute(f, d); err != nil {
 		f.Close()
 		return err
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
+}
+
+// viewResults collects, for every goal that reached a checkpoint or an end,
+// what each side said it did and the deliveries nobody replaced.
+func viewResults(sections []*viewSection) []viewResult {
+	var results []viewResult
+	for _, sec := range sections {
+		if sec.Outcome == "" {
+			continue
+		}
+		r := viewResult{N: sec.N, Goal: clip(printable(sec.Goal), 200), Outcome: sec.Outcome}
+		for _, it := range sec.Items {
+			switch {
+			case it.Kind == "done" && it.Text != "":
+				r.Summaries = append(r.Summaries, it)
+			case it.Kind == "message" && it.Type == "delivery" && it.SupersededBy == "":
+				r.Deliveries = append(r.Deliveries, viewRequest{ID: it.ID, Who: it.Who, Mine: it.Mine,
+					Summary: clip(oneLine(firstLine(it.Text)), 80), Time: it.Time})
+			}
+		}
+		results = append(results, r)
+	}
+	return results
+}
+
+// viewNowFor says in one line where the chat stands, from the reader's side:
+// "you" is this machine's user, the one who looks at this page.
+func viewNowFor(c transfer.ChatSummary, d viewData, proposal *viewItem) viewNow {
+	outcome, messages := "", 0
+	if n := len(d.Sections); n > 0 {
+		outcome, messages = d.Sections[n-1].Outcome, d.Sections[n-1].Messages
+	}
+	switch c.Status {
+	case "waiting":
+		return viewNow{"wait", "邀请已发出，等对方的用户同意加入", "对方同意之前，两边都不会开始。"}
+	case "active":
+		detail := fmt.Sprintf("目标 %d · 本段 %d 条消息 · 最后活动 %s", max(len(d.Sections), 1), messages, localTime(c.Last, "15:04:05"))
+		if d.Pending > 0 {
+			detail += fmt.Sprintf(" · %d 个请求等回应", d.Pending)
+		}
+		return viewNow{"live", "两边的 Agent 正在协作", detail}
+	case "paused":
+		if proposal != nil && proposal.Mine {
+			return viewNow{"wait", "我方提出了下一个目标，等对方的用户同意", proposal.Text}
+		}
+		if proposal != nil {
+			return viewNow{"act", "对方提出了下一个目标，要你同意才会继续", proposal.Text + "\n\n同意或不同意，都直接告诉你的 Agent。"}
+		}
+		return viewNow{"act", "这一轮停下了，等你决定：结束，还是继续", outcome + "\n\n看看下面的结果，然后告诉你的 Agent。"}
+	case "ended":
+		return viewNow{"done", "对话已结束", outcome}
+	}
+	return viewNow{"wait", "状态未知", "这个对话开始于 jand 0.4.3 之前，没有完整记录。"}
+}
+
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return strings.TrimSpace(s[:i]) // a CRLF file leaves its \r behind
+	}
+	return s
 }
 
 func openBrowser(path string) error {

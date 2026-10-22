@@ -23,7 +23,7 @@ HOME = tempfile.mkdtemp(prefix="jand-compat-home-")
 
 
 def jand(binary, *args):
-    env = dict(os.environ, JAND_HOME=HOME)
+    env = dict(os.environ, JAND_HOME=HOME, JAND_PAGE="update")
     result = subprocess.run([str(binary), *args], capture_output=True, text=True, timeout=30, env=env)
     return result
 
