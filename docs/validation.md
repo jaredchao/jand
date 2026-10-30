@@ -272,3 +272,12 @@ GitHub Release v0.4.3（预发布，7 个附件经 API 核对均已上传、大�
 - Codex 使用固定提醒调用 `queue --resume`，不转发对方正文、目标或密钥。`agent_queued` 仅表示排队命令成功，恢复警告保留；超时或重启可能重复提醒，Agent 以正式 recv 结果为准。
 - 本地已通过全量竞态测试、go vet、交接及对话真实进程冒烟；新通知链路用真实 jand、本地 Relay、模拟 Codex 验证重试、合并、不消费、关闭退出。真实 Codex 桌面忙碌与空闲唤醒仍未验收，Hermes/DSH 尚未接入。
 - 本版包含此前 main 上尚未发行的自动对话页面、当前状态和结果栏。GitHub Pages 文案同步更新；网站视觉和交互验收未执行。
+
+### 0.4.6 发布与部署（2026-10-30）
+
+- 源码提交 `a749a781655ae7041b66560d891cd4a14b2203d3` 已推送，标签 `v0.4.6` 指向该提交；GitHub 预发布提供 5 个平台包、Relay 部署包和 SHA256SUMS，共 7 个资产。全部归档及包内二进制哈希核对通过。
+- macOS arm64/amd64 复用上一版 Developer ID 和公证配置。Apple 两次提交均 Accepted（arm64 `873a8b4c-cec0-4d1e-afa1-55053b29bccc`；amd64 `63066257-9534-4365-857a-1b74b94aacbc`）；签名严格校验通过。当前系统对裸命令行程序运行 spctl 返回「代码有效，但不是应用」，因此不将浏览器下载后的 Gatekeeper 放行视为已验收。
+- 本机已安装包内 macOS arm64 0.4.6，版本与二进制哈希一致；旧 0.4.5 程序已保留备份。`jand version` 实际读回本机 0.4.6、默认 HTTPS Relay 0.4.6 且兼容。
+- 服务器安装 linux-amd64 包内二进制，SHA-256 `b0dc259aa55ee4800a324b57d57ac207213473cf38dec034ab037d8ff70d870a`。替换前备份旧程序及配置；用户明确允许中断两个未结束会话后执行 Supervisor 重启。配置和访问令牌策略保留。服务 RUNNING，本机回环和公网健康均为 0.4.6、access=true。
+- 经公网 HTTPS 的 remote_smoke 和完整 chat_smoke 通过。使用旧 0.4.5 程序的兼容测试，旧/新收发四种交接组合均 delivered，新邀请可被旧版识别。测试在本机模拟双方，不代表真实跨设备或 Agent 自动唤醒验收。
+- GitHub Pages 从 main/docs 构建，已读回线上 0.4.6、默认中继和 Codex 提醒文案；未操作浏览器，网站视觉与交互验收保留待确认。
