@@ -14,7 +14,7 @@ import (
 	"github.com/jaredchao/jand/internal/transfer"
 )
 
-const defaultRelay = "http://127.0.0.1:8787"
+const defaultRelay = "https://jand.zhou-wei.com"
 
 // clientConfig is $JAND_HOME/config.json: this machine's defaults. It never
 // changes the protocol or what the peer sees; flags and environment

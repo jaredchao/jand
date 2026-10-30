@@ -263,3 +263,12 @@ GitHub Release v0.4.3（预发布，7 个附件经 API 核对均已上传、大�
 - 发布包由 `release.py --sign … --notary-profile …` 从已推送的提交构建：6 个包的 SHA-256 都校验通过；解开全部包扫描，不含真实的 Relay 地址；macOS 两个包签名后提交公证，状态 Accepted，`spctl` 显示 `Notarized Developer ID`。
 - 从 GitHub 下载的 macos-arm64 包 SHA-256 与 SHA256SUMS.txt 一致；`install.sh` 以管道方式装进临时目录（`JAND_NO_SETUP=1`），取到的是 0.4.5，能通过 `spctl`。
 - 公网 Relay 与 Ubuntu 在发布前已部署 `7797e47` 构建的 0.4.5 包，与发布版只差说明书（`b91db17`）。Windows 仍未实测。
+
+
+### 0.4.6：默认中继与 Codex 会话提醒（2026-10-30）
+
+- 默认中继改为 `https://jand.zhou-wei.com`；全新配置缺省读取和 `setup` 保存均有测试。已有配置、环境变量、参数仍优先；不改变 Relay 服务监听地址和已有 chat 保存的地址。
+- `chat watch --agent codex --thread UUID` 按 Agent 游标只看不拿，合并同批通知，progress 不单独提醒；排队失败、网络故障、429 和 5xx 退避重试。认证、游标损坏、房间不存在保留失败结果。关闭事件通知失败会重试；Agent 已读关闭事件时监听器也能退出。
+- Codex 使用固定提醒调用 `queue --resume`，不转发对方正文、目标或密钥。`agent_queued` 仅表示排队命令成功，恢复警告保留；超时或重启可能重复提醒，Agent 以正式 recv 结果为准。
+- 本地已通过全量竞态测试、go vet、交接及对话真实进程冒烟；新通知链路用真实 jand、本地 Relay、模拟 Codex 验证重试、合并、不消费、关闭退出。真实 Codex 桌面忙碌与空闲唤醒仍未验收，Hermes/DSH 尚未接入。
+- 本版包含此前 main 上尚未发行的自动对话页面、当前状态和结果栏。GitHub Pages 文案同步更新；网站视觉和交互验收未执行。

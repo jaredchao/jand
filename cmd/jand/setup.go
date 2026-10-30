@@ -55,10 +55,10 @@ func setup(ctx context.Context, args []string, in io.Reader, out, stderr io.Writ
 	fmt.Fprintln(out)
 
 	// 1. Relay: where encrypted files and messages pass through.
-	relay := firstSet(*relayFlag, os.Getenv("JAND_RELAY"), cfg.Relay)
+	relay := firstSet(*relayFlag, os.Getenv("JAND_RELAY"), cfg.Relay, defaultRelay)
 	var health relayHealth
 	for {
-		relay = strings.TrimRight(p.ask("1. Relay 地址（向搭建 Relay 的人要，例如 https://jand.example.com）", relay), "/")
+		relay = strings.TrimRight(p.ask("1. Relay 地址（可直接使用默认中继，也可填写自己的地址）", relay), "/")
 		if relay == "" {
 			if p.yes {
 				return fail("没有 Relay 地址：用 --relay 指定")

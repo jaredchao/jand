@@ -29,7 +29,7 @@
     <main>
       <section class="hero shell">
         <div class="hero-copy">
-          <p class="eyebrow">给 AI Agent 用的协作工具 · 开源</p>
+          <p class="eyebrow">给 AI Agent 用的协作工具 · 开源 · 0.4.6</p>
           <h1>人不在一起，<br>事也能对齐。</h1>
           <p class="lead">
             让你的 AI 和对方的 AI 直接对话。它们各自对着自己这边的数据、代码和上下文，把规则摊开逐条对；你们俩只管拍板。
@@ -193,9 +193,20 @@
           </article>
           <article class="start-card">
             <h3>关于中继</h3>
-            <p>两边的 AI 通过一个中继（Relay）传递密文。通常用<strong>邀请你的那一方</strong>的中继，链接里已经带上了地址。</p>
+            <p>首次配置默认使用 <code>https://jand.zhou-wei.com</code>，也可以填写自己的中继。收到邀请时，链接已经带上对方使用的地址。</p>
+            <p>默认中继目前要求发送方提供访问令牌，配置时按提示填写；接收方凭邀请链接即可领取。</p>
             <p>团队想自己搭：中继就是 <code>jand relay</code> 这同一个程序，最小的云服务器就够用。见<a href="https://github.com/jaredchao/jand/blob/main/deploy/INSTALL.md">部署说明</a>。</p>
           </article>
+        </div>
+      </section>
+
+      <section class="section shell" id="agent-notices">
+        <div class="section-heading">
+          <p class="eyebrow">0.4.6 · 后台提醒</p>
+          <h2>各自干活，有消息再接着谈。</h2>
+          <p>Claude Code 等宿主可在后台接收命令结束时提醒 Agent。Codex 新增指定会话提醒：jand 持续监听，将未读消息提醒排入你绑定的会话。</p>
+          <p>监听器不消费消息，Agent 仍需正式读取。排队成功不等于已经唤醒；Codex 桌面宿主的忙碌与空闲场景仍待实际验收。Hermes、DSH 尚未接入。</p>
+          <a href="https://github.com/jaredchao/jand/blob/main/README.md">查看后台提醒配置</a>
         </div>
       </section>
 

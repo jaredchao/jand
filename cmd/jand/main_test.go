@@ -99,7 +99,6 @@ func TestClientConfigPrecedence(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("JAND_HOME", home)
 	t.Setenv("JAND_RELAY", "")
-	os.WriteFile(home+"/config.json", []byte(`{"relay":"https://relay.example.com","chat":{"recv_wake":["request"],"default_budget":30}}`), 0600)
 	show := func() map[string]any {
 		var out, stderr bytes.Buffer
 		if got := run(context.Background(), []string{"config"}, &out, &stderr); got != 0 {
@@ -109,6 +108,10 @@ func TestClientConfigPrecedence(t *testing.T) {
 		json.Unmarshal(out.Bytes(), &v)
 		return v
 	}
+	if v := show(); v["relay"] != "https://jand.zhou-wei.com" || v["relay_source"] != "default" {
+		t.Fatalf("fresh installation default: %v", v)
+	}
+	os.WriteFile(home+"/config.json", []byte(`{"relay":"https://relay.example.com","chat":{"recv_wake":["request"],"default_budget":30}}`), 0600)
 	if v := show(); v["relay"] != "https://relay.example.com" || v["relay_source"] != "config" || v["default_budget"] != float64(30) {
 		t.Fatalf("from config: %v", v)
 	}

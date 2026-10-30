@@ -51,6 +51,10 @@ See what happened (local record only; nothing is fetched from the relay):
                                                the peer sent something your agent has not read yet
                                                (it only looks; the agent still receives everything);
                                                --notify also shows a desktop notification
+  jand chat watch --agent codex --thread UUID <chat>
+                                               keep watching and queue notices for this exact
+                                               Codex session; tries --resume, never consumes
+                                               events; queue success does not prove a wake
 
 Message kinds (--kind): note (default), progress (no answer expected),
 request (expects an answer), reply (needs --reply-to), delivery (something is

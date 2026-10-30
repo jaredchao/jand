@@ -102,4 +102,4 @@ python3 scripts/chat_smoke.py https://你的域名
 
 它在本机模拟双方，经公网 Relay 走完一遍：邀请、加入、后台 `recv` 被唤醒、消息类型与回复、先读再回、取代关系、双方完成后暂停、暂停后收尾消息、按示例流程 `review` 的对话、提出与接受新目标、关闭。最后由双方在各自设备用对应平台的 `jand` 包做一次真实交接或对话。
 
-**关于 Relay 地址**：公开的包和仓库只使用示例地址 `203.0.113.10`，它不是已部署的服务。使用者把真实地址写进本机配置（`jand config` 显示配置文件路径，写入 `{"relay": "https://你的域名"}`），或设置 `JAND_RELAY`。如果需要把真实地址写死在包里，用 `python3 scripts/release.py --relay https://你的域名` 另行构建，只私下分发，不上传公开 Release，并重新核对 `SHA256SUMS.txt`。
+**关于 Relay 地址**：公开发行版默认使用 `https://jand.zhou-wei.com`。用户首次运行 `jand setup` 时可接受该默认地址并写入本机配置；自建中继使用 `jand setup --relay https://你的域名`，也可以通过配置文件或 `JAND_RELAY` 覆盖。`scripts/release.py --relay` 只改变随包指南中的地址，不改变二进制内置默认值。部署示例里的监听地址和服务器示例地址仍需按实际环境填写。

@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,42 @@ import (
 
 	"github.com/jaredchao/jand/internal/relay"
 )
+
+type setupRelayTransport func(*http.Request) (*http.Response, error)
+
+func (f setupRelayTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestSetupCreatesConfigWithDefaultRelay(t *testing.T) {
+	home, localRelay := setupEnv(t)
+	token := filepath.Join(home, "token")
+	if err := os.WriteFile(token, []byte("team-secret"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Verify first-run selection and saving without contacting the public relay.
+	originalClient := http.DefaultClient
+	t.Cleanup(func() { http.DefaultClient = originalClient })
+	local, _ := url.Parse(localRelay)
+	checked := false
+	http.DefaultClient = &http.Client{Transport: setupRelayTransport(func(req *http.Request) (*http.Response, error) {
+		if req.URL.String() != "https://jand.zhou-wei.com/healthz" {
+			t.Errorf("first-run relay: %s", req.URL)
+		}
+		checked = true
+		copy := req.Clone(req.Context())
+		copy.URL.Scheme, copy.URL.Host = local.Scheme, local.Host
+		return http.DefaultTransport.RoundTrip(copy)
+	})}
+	var out, stderr bytes.Buffer
+	if code := setup(context.Background(), []string{"--yes", "--agents", "other", "--token-file", token, "--skip-test"}, strings.NewReader(""), &out, &stderr); code != 0 {
+		t.Fatalf("setup default: %d %s %s", code, out.String(), stderr.String())
+	}
+	cfg, err := loadClientConfig()
+	if err != nil || !checked || cfg.Relay != "https://jand.zhou-wei.com" {
+		t.Fatalf("default not persisted: relay=%q checked=%v err=%v", cfg.Relay, checked, err)
+	}
+}
 
 // setupEnv gives a test its own home, JAND_HOME and a relay that requires
 // the access token "team-secret".

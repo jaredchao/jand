@@ -34,16 +34,31 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 	outPath := fs.String("out", "", "view: write the page here")
 	noOpen := fs.Bool("no-open", false, "view: do not open a browser")
 	notify := fs.Bool("notify", false, "watch: also show a desktop notification")
+	agent := fs.String("agent", "", "watch: notify an agent (codex)")
+	thread := fs.String("thread", "", "watch: exact target agent session UUID")
 	all := fs.Bool("all", false, "list: include chats that ended more than a week ago")
 	if err := fs.Parse(args); err != nil {
 		chatUsage(stderr)
 		return 2
 	}
 	dir := transfer.DefaultStateDir()
+	if sub != "watch" && (*agent != "" || *thread != "") {
+		fmt.Fprintln(stderr, "--agent and --thread are only supported by chat watch")
+		return 2
+	}
 	if sub == "watch" {
 		if fs.NArg() != 1 {
 			chatUsage(stderr)
 			return 2
+		}
+		var agentNotify func(context.Context, string) error
+		if *agent != "" || *thread != "" {
+			var err error
+			agentNotify, err = codexWatchNotifier(*agent, *thread, *jsonOutput, out)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return 2
+			}
 		}
 		if !*jsonOutput {
 			fmt.Fprintln(out, "Watching for events your agent has not read yet. Ctrl-C stops watching; it never takes messages from the agent.")
@@ -58,8 +73,17 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 				}
 			}
 		}
-		if err := transfer.ChatWatch(ctx, fs.Arg(0), 0, transfer.Options{Emit: emit}); err != nil {
+		var err error
+		if agentNotify != nil {
+			err = transfer.ChatWatchNotify(ctx, fs.Arg(0), 0, transfer.Options{Emit: emit}, agentNotify)
+		} else {
+			err = transfer.ChatWatch(ctx, fs.Arg(0), 0, transfer.Options{Emit: emit})
+		}
+		if err != nil {
 			fmt.Fprintln(stderr, err)
+			if ctx.Err() != nil {
+				return 130
+			}
 			return 1
 		}
 		return 0

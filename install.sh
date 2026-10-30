@@ -45,7 +45,7 @@ if [ -z "${tag}" ]; then
   # list is newest first.
   tag="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=1" |
     sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
-  [ -n "${tag}" ] || die "查不到 ${REPO} 的发行版本（GitHub API 可能暂时不可用，可用 JAND_VERSION=v0.4.3 指定）"
+  [ -n "${tag}" ] || die "查不到 ${REPO} 的发行版本（GitHub API 可能暂时不可用，可用 JAND_VERSION=v0.4.6 指定）"
 fi
 version="${tag#v}"
 name="jand-${version}-${os}-${arch}"

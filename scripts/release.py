@@ -185,7 +185,9 @@ jand 让你的 AI Agent 把任务安全地交给另一台机器上的 Agent，�
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=ROOT / "dist" / "releases")
-    parser.add_argument("--relay", default="http://203.0.113.10:8787")
+    default_relay = re.search(r'const defaultRelay = "([^"]+)"', (ROOT / "cmd/jand/config.go").read_text()).group(1)
+    parser.add_argument("--relay", default=default_relay,
+                        help="Relay shown in package guides; defaults to the client's built-in relay")
     parser.add_argument("--sign", default=os.environ.get("JAND_SIGN_IDENTITY"),
                         help="Developer ID identity for macOS binaries; skipped when unset")
     parser.add_argument("--targets", default="",

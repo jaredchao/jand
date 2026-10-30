@@ -21,7 +21,7 @@ import (
 	"github.com/jaredchao/jand/internal/transfer"
 )
 
-const version = "0.4.5"
+const version = "0.4.6"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -49,7 +49,7 @@ func usage(w io.Writer) {
   jand relay [--listen 127.0.0.1:8787] [--config relay.json] [--print-config]
 
 Options (before file/code):
-  --relay URL      Relay URL; JAND_RELAY or http://127.0.0.1:8787
+  --relay URL      Relay URL; flag > JAND_RELAY > config > https://jand.zhou-wei.com
   --json           Newline-delimited JSON events (code is emitted immediately)
   --out DIR        Receive directory (default: ./received)
   --wait DURATION  Optional wait for verified receiver receipt (default: 0)

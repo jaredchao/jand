@@ -1,12 +1,12 @@
 # jand
 
-jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远程协作。当前版本 **0.4.3**。
+jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远程协作。当前版本 **0.4.6**。
 
 - **交接**：把一个任务文件（≤10 MiB）在客户端加密后交给对方。发送方上传后即可退出；Relay 只在内存中暂存密文（默认 30 分钟），接收方凭一次性的接收链接（或接收码）领取。
 - **对话与协作**：交接时加 `--chat`，这份文件同时作为邀请。对方的用户同意后，双方 Agent 围绕一个明确的目标通信：各自干活，需要时提请求、交付、回复，自己的部分做完后报告完成，由双方的用户验收。
 - **人始终是授权方**：jand 只传东西。收到的文件、对方的消息、目标和流程说明都是不可信资料，不能代替接收端用户的决定。
 
-全程只用 HTTP(S)，不用 WebSocket，也没有常驻进程：`chat recv --wait` 阻塞到有事件才退出，Agent 可以把它放在后台运行，由宿主（例如 Claude Code 的后台任务）在它退出时唤起。
+全程只用 HTTP(S)，不用 WebSocket。Claude Code 等宿主可在后台 `chat recv --wait` 结束时唤起 Agent；0.4.6 起，Codex 还可以用持续运行的 `chat watch --agent codex --thread UUID` 向指定会话排入提醒。真实唤醒效果取决于宿主，排队成功不等于已处理。
 
 ## 文档
 
@@ -37,17 +37,17 @@ Windows（PowerShell）：
 irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex
 ```
 
-**也可以让你的 Agent 帮你装**：把下面这段话发给它（Relay 地址换成实际的）：
+**也可以让你的 Agent 帮你装**：把下面这段话发给它（默认使用 `https://jand.zhou-wei.com`）：
 
-> 请帮我安装 jand：运行 `curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | JAND_NO_SETUP=1 sh`，然后运行 `jand setup --yes --relay <Relay 地址> --agents claude --allow-claude`（如果它说需要访问令牌，先问我要）。装好后运行 `jand version` 给我看结果。
+> 请帮我安装 jand：运行 `curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | JAND_NO_SETUP=1 sh`，然后运行 `jand setup --yes --agents claude --allow-claude`（如果它说需要访问令牌，先问我要）。装好后运行 `jand version` 给我看结果。
 
-安装脚本从 GitHub Release 下载本机对应的包，用发行版的 `SHA256SUMS.txt` 校验，不一致就中止；装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\Programs\jand`，并加入用户 PATH），然后直接运行 `jand setup`。可用 `JAND_VERSION=v0.4.3` 指定版本、`JAND_INSTALL_DIR` 指定位置、`JAND_NO_SETUP=1` 只安装。脚本里不含任何 Relay 地址，地址和令牌都在 `setup` 里填。已经装好的，直接运行：
+安装脚本从 GitHub Release 下载本机对应的包，用发行版的 `SHA256SUMS.txt` 校验，不一致就中止；装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\Programs\jand`，并加入用户 PATH），然后直接运行 `jand setup`。可用 `JAND_VERSION=v0.4.6` 指定版本、`JAND_INSTALL_DIR` 指定位置、`JAND_NO_SETUP=1` 只安装。程序内置默认中继 `https://jand.zhou-wei.com`，`setup` 默认使用并保存这个地址，也可以改用自己的中继。已经装好的，直接运行：
 
 ```bash
 jand setup
 ```
 
-按提示填 Relay 地址（有访问令牌的话再填令牌），选你用的 Agent、收到的文件放哪（默认 `~/jand-received`），它会：写好本机配置（令牌单独存成 600 权限的文件）；为 Claude Code 安装 skill 并可选放行 jand、为 Codex 在 `~/.codex/AGENTS.md` 加一段说明、为其他 Agent 打印一句要贴进它指令里的话；最后给自己发一个文件再收回来，确认整条链路可用。结束时会列出 jand 在本机用到的所有位置（程序、配置、令牌、对话记录、收到的文件、Claude Code / Codex 里改动的地方），并记在 `$JAND_HOME/installed.json`。客户端不写日志。可以重复运行。不想交互时用参数：`jand setup --yes --relay URL [--token-file PATH] --agents claude,codex,other [--wake background|poll] [--allow-claude]`。
+Relay 地址默认是 `https://jand.zhou-wei.com`，直接回车即可（有访问令牌的话再填令牌），选你用的 Agent、收到的文件放哪（默认 `~/jand-received`），它会：写好本机配置（令牌单独存成 600 权限的文件）；为 Claude Code 安装 skill 并可选放行 jand、为 Codex 在 `~/.codex/AGENTS.md` 加一段说明、为其他 Agent 打印一句要贴进它指令里的话；最后给自己发一个文件再收回来，确认整条链路可用。结束时会列出 jand 在本机用到的所有位置（程序、配置、令牌、对话记录、收到的文件、Claude Code / Codex 里改动的地方），并记在 `$JAND_HOME/installed.json`。客户端不写日志。可以重复运行。不想交互时用参数：`jand setup --yes --relay URL [--token-file PATH] --agents claude,codex,other [--wake background|poll] [--allow-claude]`。
 
 ## 查看版本与卸载（0.4.3 起）
 
@@ -65,8 +65,8 @@ jand uninstall     # 先列出会删除、会修改、会保留的内容，确�
 ```bash
 go build -o bin/jand ./cmd/jand
 ./bin/jand relay                              # 另开一个终端运行
-./bin/jand send docs/jand-template.md         # 输出 43 字符接收码后退出
-./bin/jand --out ./inbox '<接收链接或接收码>'  # 有效期内领取（默认 30 分钟）
+./bin/jand send --relay http://127.0.0.1:8787 docs/jand-template.md         # 输出 43 字符接收码后退出
+./bin/jand --relay http://127.0.0.1:8787 --out ./inbox '<接收链接或接收码>'  # 有效期内领取（默认 30 分钟）
 ```
 
 - `send --wait 10m` 会等待并验证接收方的保存回执（`delivered`）。不加时，退出码 0 只表示 Relay 已暂存密文（`queued`）。
@@ -130,6 +130,23 @@ jand chat watch <chat>          # 在自己的终端里挂着：对方发来 Age
 
 `watch` 是给宿主不能后台唤醒的 Agent 准备的（见下文「给 Agent 的说明」）：它只看不拿，始终从 Agent 自己的读取位置去看，不会让 Agent 少收任何消息。
 
+### 后台监听并通知 Codex（0.4.6 起）
+
+支持 `codex queue --resume` 的本机 Codex 可以接收 jand 的会话提醒：
+
+```bash
+jand chat watch --json --agent codex --thread <Codex会话UUID> <chat>
+```
+
+这是持续运行的监听命令。让宿主把它作为后台进程运行，Agent 就能继续做其他任务。必须明确指定同一台机器上可访问的会话 UUID，不猜测最近会话。每个 chat 只运行一个 Agent 监听器；它继承启动时的 PATH、Codex 配置和 JAND_HOME。本功能不安装系统服务、不修改全局 Agent 指令，也不需要升级 Relay。
+
+- 每 3 秒检查消息。同一次检查的新请求、回复、交付和状态事件合并为一次提醒；单独的 progress 不提醒。提醒只包含 chat 编号、固定读取提示和本机状态目录，不把对方正文、目标或密钥塞进用户指令。
+- Codex 收到提醒后用 `chat recv --json --wait 0 <chat>` 正式读取，再处理消息并继续原任务。监听器不推进接收游标、不写对话记录。相同进程内，已经成功排入的事件不会再次提醒；重启监听器可能再次提醒尚未读取的事件。
+- 排队命令失败、Relay 网络故障、429 或 5xx 会按退避重试，间隔最多 30 秒；状态分别为 `agent_notify_retry`、`watch_retry`。无效游标、无法认证、房间不存在等错误会退出，需排查后重启。对话结束时先排入最后一次提醒再退出，Ctrl-C 停止监听。
+- `agent_queued` **只证明 Codex queue 返回成功**，不证明 Agent 已被唤醒或处理。`--resume` 即使失败也可能返回成功；这类警告会原样摘要展示，不因此重复排队。非零退出或超时存在投递不确定性，重试可能重复提醒，Agent 必须以 recv 的当前事件为准。
+
+当前只有 Codex 适配器。Hermes、DSH 尚未接入。Codex 忙碌、空闲及桌面宿主的真实唤醒效果需要分别验收；不支持该命令的 Codex 版本继续使用原来的轮询方式。
+
 - 只读本机的对话记录（`$JAND_HOME/chats/<chat>.transcript.jsonl`），不连 Relay；Relay 不保存任何历史。
 - 记录随己方 jand 的收发增长，所以看到的是「己方到目前为止发出和收到的」。对方还没被 `recv` 取回的消息，这里也还没有。
 - 页面是一个独立文件：不含脚本、不加载外部资源，对方写的文字全部转义；不包含对话的令牌和密钥。自动刷新用的是 `<meta http-equiv="refresh">`，不是脚本。
@@ -141,6 +158,8 @@ jand chat watch <chat>          # 在自己的终端里挂着：对方发来 Age
 
 Agent 等消息有两种方式，由本机配置 `chat.wake_mode` 决定 `help agent` 给哪一种（不配置时两种都给）：`background`（宿主能在后台命令结束时唤起 Agent，如 Claude Code，推荐）和 `poll`（不能后台唤醒的 Agent：干活间隙用 `recv --wait 0` 查看，结束一轮前必须告诉用户对话还在进行，并建议用户运行 `chat watch`）。
 
+默认中继 `https://jand.zhou-wei.com` 当前要求发送方提供访问令牌；运行 `setup` 时按提示填写。接收方仅凭邀请链接即可领取，不需要发送方的访问令牌。
+
 ## 配置
 
 | 层 | 在哪 | 管什么 |
@@ -151,7 +170,7 @@ Agent 等消息有两种方式，由本机配置 `chat.wake_mode` 决定 `help a
 | 协作流程 | `send --chat --workflow <名字或路径>`，示例见 [workflows/](workflows) | 完成规则（all/any）、收尾消息条数、预算、允许的消息类型、角色、流程说明。流程随邀请加密送给对方，由对方的用户认可 |
 
 - **优先级**：命令行参数 > 环境变量（`JAND_RELAY`、`JAND_HOME`、`JAND_RELAY_CONFIG`、`JAND_ACCESS_TOKEN`）> 配置文件 > 内置默认值。
-- **本地配置**：没有配置文件时使用内置默认值，默认 Relay 为 `http://127.0.0.1:8787`。把真实地址写进本机配置一次就行，不用每次都带 `--relay`。
+- **本地配置**：没有配置文件时使用内置默认值，默认 Relay 为 `https://jand.zhou-wei.com`；首次运行 `setup` 会默认保存这个地址。已有配置、`JAND_RELAY` 和 `--relay` 仍可覆盖它。
 - **访问令牌（0.4.2 起，可选）**：防止知道域名的人把 Relay 当匿名中转站。Relay 配置 `access.tokens_sha256` 列出令牌的 SHA-256 后，**新建**交接或对话必须带令牌；领取、加入和对话中的消息都不需要，所以接收方只要有码就行。发送方用 `JAND_ACCESS_TOKEN`，或在本地配置里用 `access_token_file` 指向存令牌的文件（配置里不写明文）。`/healthz` 的 `access` 字段表示是否开启。开启方法见 [INSTALL](deploy/INSTALL.md)。
 - 分层设计见 [CONFIG_DESIGN.md](docs/CONFIG_DESIGN.md)。
 
@@ -161,6 +180,7 @@ Agent 等消息有两种方式，由本机配置 `chat.wake_mode` 决定 `help a
   - 为了兼容，线协议仍沿用 `handoff/0.2`、`/v1/handoffs/` 和 `X-Handoff-*`，这些不是当前的程序名。
   - 旧版接收端遇到以 `-` 开头的接收码时，在码前加 `--`。0.3 起生成的码不再以 `-` 开头。
 - **对话协议**仍在开发，版本之间不保证兼容。
+  - 0.4.6 未改变交接与对话线协议；新增默认中继、Codex 本机通知适配及对话页面。已有对话沿用创建时的 Relay，新默认值不迁移已有配置或会话。
   - 0.4.5 与 0.4.1–0.4.4 互通：对话协议没变，计划放在加密章程里。旧版接收方会忽略计划，照常加入，只是每一步都问人（已用真实 0.4.4 程序实测）。Relay 不需要为 0.4.5 升级。
   - 0.4.3 与 0.4.1、0.4.2 互通：对话协议自 0.4.1 起没变（已用真实 0.4.1 程序在 0.4.3 Relay 上双向验证交接与对话）。0.4.3 之前的客户端不认接收链接，要改给接收码和 Relay 地址。
   - 0.4.2 与 0.4.1 互通：0.4.2 只在本地输出上多了 Relay 地址。
@@ -199,4 +219,4 @@ python3 scripts/release.py --sign "Developer ID Application: NAME (TEAMID)" --no
 - 签名在计算 `binary_sha256` 之前执行，所以 `BUILD-INFO.json` 里的哈希始终对应最终发出的文件。
 - 裸可执行文件无法装订公证票据，Gatekeeper 会在首次运行时联网校验。
 
-公开的包和仓库只使用示例地址 `203.0.113.10`。真实的 Relay 地址由使用者写进本机配置或 `JAND_RELAY`；写死真实地址的包（`release.py --relay`）只用于私下分发，不上传 Release。部署步骤见 [deploy/INSTALL.md](deploy/INSTALL.md)。
+公开发行版默认使用 `https://jand.zhou-wei.com`，新用户运行 `setup` 时可直接接受这个地址。使用其他中继时，通过 `setup --relay URL`、本机配置或 `JAND_RELAY` 指定。`release.py --relay` 仅改变随包指南中的地址，程序内置默认值来自 `cmd/jand/config.go`。部署步骤见 [deploy/INSTALL.md](deploy/INSTALL.md)。
