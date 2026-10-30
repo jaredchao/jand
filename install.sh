@@ -14,6 +14,7 @@
 set -eu
 
 REPO="jaredchao/jand"
+FALLBACK_VERSION="v0.4.6"
 DIR="${JAND_INSTALL_DIR:-${HOME}/.local/bin}"
 
 say() { printf '%s\n' "$*"; }
@@ -45,7 +46,10 @@ if [ -z "${tag}" ]; then
   # list is newest first.
   tag="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=1" |
     sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
-  [ -n "${tag}" ] || die "查不到 ${REPO} 的发行版本（GitHub API 可能暂时不可用，可用 JAND_VERSION=v0.4.6 指定）"
+  if [ -z "${tag}" ]; then
+    tag="${FALLBACK_VERSION}"
+    say "无法查询最新版本；改用安装脚本对应的已发布版本 ${tag}。可用 JAND_VERSION 指定其他版本。" >&2
+  fi
 fi
 version="${tag#v}"
 name="jand-${version}-${os}-${arch}"

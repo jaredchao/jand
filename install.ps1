@@ -7,13 +7,14 @@
 # to the user PATH, and runs "jand setup".
 #
 # Environment:
-#   JAND_VERSION      a release tag such as v0.4.3 (default: the newest release)
+#   JAND_VERSION      a release tag such as v0.4.6 (default: the newest release)
 #   JAND_INSTALL_DIR  where to put jand.exe (default: %LOCALAPPDATA%\Programs\jand)
 #   JAND_NO_SETUP=1   install only; do not run jand setup
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $repo = 'jaredchao/jand'
+$fallbackVersion = 'v0.4.6'
 $dir = if ($env:JAND_INSTALL_DIR) { $env:JAND_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\jand' }
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') {
     throw "安装失败：目前只有 windows-amd64 的发行包，本机是 $($env:PROCESSOR_ARCHITECTURE)"
@@ -22,9 +23,16 @@ if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') {
 $tag = $env:JAND_VERSION
 if (-not $tag) {
     # Every release so far is a prerelease, which /releases/latest skips.
-    $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=1" -Headers @{ 'User-Agent' = 'jand-installer' }
-    $tag = @($releases)[0].tag_name
-    if (-not $tag) { throw "安装失败：查不到 $repo 的发行版本（可用 JAND_VERSION=v0.4.3 指定）" }
+    try {
+        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=1" -Headers @{ 'User-Agent' = 'jand-installer' }
+        $tag = @($releases)[0].tag_name
+    } catch {
+        Write-Warning "无法查询 GitHub 最新版本：$($_.Exception.Message)"
+    }
+    if (-not $tag) {
+        $tag = $fallbackVersion
+        Write-Warning "无法确认最新版本；改用安装脚本对应的已发布版本 $tag。可用 JAND_VERSION 指定其他版本。"
+    }
 }
 $version = $tag -replace '^v', ''
 $name = "jand-$version-windows-amd64"

@@ -281,3 +281,5 @@ GitHub Release v0.4.3（预发布，7 个附件经 API 核对均已上传、大�
 - 服务器安装 linux-amd64 包内二进制，SHA-256 `b0dc259aa55ee4800a324b57d57ac207213473cf38dec034ab037d8ff70d870a`。替换前备份旧程序及配置；用户明确允许中断两个未结束会话后执行 Supervisor 重启。配置和访问令牌策略保留。服务 RUNNING，本机回环和公网健康均为 0.4.6、access=true。
 - 经公网 HTTPS 的 remote_smoke 和完整 chat_smoke 通过。使用旧 0.4.5 程序的兼容测试，旧/新收发四种交接组合均 delivered，新邀请可被旧版识别。测试在本机模拟双方，不代表真实跨设备或 Agent 自动唤醒验收。
 - GitHub Pages 从 main/docs 构建，已读回线上 0.4.6、默认中继和 Codex 提醒文案；未操作浏览器，网站视觉与交互验收保留待确认。
+
+- 发布后新用户安装检查发现匿名 GitHub API 返回 403，安装器无法查最新版本。已为 shell/PowerShell 安装器加入明确提示的已发布版本回退（v0.4.6），不把回退版宣称为已确认的最新版本。shell 的正常查询、API 故障回退、校验失败不覆盖旧安装三条路径均通过受控测试；PowerShell 未做 Windows 实机执行。
