@@ -190,18 +190,23 @@ jand 让你的 AI Agent 把任务安全地交给另一台机器上的 Agent，�
 
 
 def main():
+    config_path = Path(os.environ.get("JAND_RELEASE_CONFIG", "~/.config/jand/release.json")).expanduser()
+    saved = json.loads(config_path.read_text()) if config_path.exists() else {}
+    allowed = {"sign_identity", "notary_profile", "notary_keychain"}
+    if not isinstance(saved, dict) or set(saved) - allowed or any(not isinstance(v, str) or not v for v in saved.values()):
+        raise ValueError("Invalid local release configuration; only non-secret signing/profile/keychain strings are allowed")
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path, default=ROOT / "dist" / "releases")
     default_relay = re.search(r'const defaultRelay = "([^"]+)"', (ROOT / "cmd/jand/config.go").read_text()).group(1)
     parser.add_argument("--relay", default=default_relay,
                         help="Relay shown in package guides; defaults to the client's built-in relay")
-    parser.add_argument("--sign", default=os.environ.get("JAND_SIGN_IDENTITY"),
+    parser.add_argument("--sign", default=os.environ.get("JAND_SIGN_IDENTITY", saved.get("sign_identity")),
                         help="Developer ID identity for macOS binaries; skipped when unset")
     parser.add_argument("--targets", default="",
                         help="comma-separated labels such as linux-amd64,macos-arm64; default builds all")
-    parser.add_argument("--notary-profile", default=os.environ.get("JAND_NOTARY_PROFILE"),
+    parser.add_argument("--notary-profile", default=os.environ.get("JAND_NOTARY_PROFILE", saved.get("notary_profile")),
                         help="notarytool keychain profile; requires --sign")
-    parser.add_argument("--notary-keychain", default=os.environ.get("JAND_NOTARY_KEYCHAIN"),
+    parser.add_argument("--notary-keychain", default=os.environ.get("JAND_NOTARY_KEYCHAIN", saved.get("notary_keychain")),
                         help="explicit keychain containing the existing notary profile")
     args = parser.parse_args()
     url = urlsplit(args.relay)

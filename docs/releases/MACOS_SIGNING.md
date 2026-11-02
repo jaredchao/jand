@@ -18,6 +18,11 @@ python3 scripts/release.py --sign 'Developer ID Application: zhou wei (A5L4GGX82
 指定非敏感定位信息。脚本在编译前检查公证配置；失败不创建新凭据，不打印密码，
 不自动降为未公证。先核对上次实际配置和存储位置，再判断是否需要补充信息。
 
+本机非敏感定位配置保存在 `~/.config/jand/release.json`，字段为 sign_identity、
+notary_profile、notary_keychain。脚本默认复用该文件，命令参数和环境变量优先。
+不要在文件中存密码、私钥或访问令牌。后续发布应读取此配置和预检结果，不再要求
+用户重复提供已有配置名称；配置项找不到也不能推断用户需要新申请凭据。
+
 2026-11-02 核查：此前同名配置有成功记录；当前默认查找及显式 login 钥匙串
 均找不到该项。未确认其不可用的原因，不推断已删除、失效或密码错误。
 本轮 0.5.0 macOS 归档仍有 Developer ID 签名，但不能标为已公证。
