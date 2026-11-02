@@ -74,14 +74,21 @@ def sign_macos(binary, identity):
                 f"{' '.join(step[:2])} failed for {binary.name} (exit {result.returncode}): {message}")
 
 
-def notarize_macos(binary, profile):
+def notary_args(profile, keychain=None):
+    args = ["--keychain-profile", profile]
+    if keychain:
+        args += ["--keychain", str(Path(keychain).expanduser())]
+    return args
+
+
+def notarize_macos(binary, profile, keychain=None):
     """Submit one executable for notarization. A bare executable cannot be
     stapled, so Gatekeeper checks the ticket online on first run."""
     with tempfile.TemporaryDirectory(prefix=".jand-notary-") as temp:
         bundle = Path(temp) / (binary.name + ".zip")
         for step in (["ditto", "-c", "-k", "--keepParent", str(binary), str(bundle)],
                      ["xcrun", "notarytool", "submit", str(bundle),
-                      "--keychain-profile", profile, "--wait"]):
+                      *notary_args(profile, keychain), "--wait"]):
             result = subprocess.run(step, capture_output=True, text=True)
             print((result.stdout or "").strip(), flush=True)
             if result.returncode != 0:
@@ -194,6 +201,8 @@ def main():
                         help="comma-separated labels such as linux-amd64,macos-arm64; default builds all")
     parser.add_argument("--notary-profile", default=os.environ.get("JAND_NOTARY_PROFILE"),
                         help="notarytool keychain profile; requires --sign")
+    parser.add_argument("--notary-keychain", default=os.environ.get("JAND_NOTARY_KEYCHAIN"),
+                        help="explicit keychain containing the existing notary profile")
     args = parser.parse_args()
     url = urlsplit(args.relay)
     if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password or url.query or url.fragment or url.path not in {"", "/"} or any(ch.isspace() for ch in args.relay):
@@ -202,6 +211,17 @@ def main():
         parser.error("--relay must not contain shell or Markdown metacharacters")
     if args.notary_profile and not args.sign:
         parser.error("--notary-profile requires --sign: notarization without a Developer ID signature is rejected")
+    if args.notary_profile:
+        # Check the existing profile before compiling. This never creates,
+        # replaces or prints credentials, and never silently drops notarization.
+        preflight = subprocess.run(["xcrun", "notarytool", "history",
+            *notary_args(args.notary_profile, args.notary_keychain), "--output-format", "json"],
+            capture_output=True, text=True, timeout=60)
+        if preflight.returncode:
+            raise RuntimeError("Existing notary profile is unavailable: " + args.notary_profile +
+                "; keychain=" + (args.notary_keychain or "system lookup") +
+                ". Verify the previous credential location before requesting new credentials. " +
+                "No build or unsigned fallback was performed.")
     targets = TARGETS
     if args.targets:
         wanted = {t.strip() for t in args.targets.split(",") if t.strip()}
@@ -233,7 +253,7 @@ def main():
                 sign_macos(binary, args.sign)
                 signed = True
                 if args.notary_profile:
-                    notarize_macos(binary, args.notary_profile)
+                    notarize_macos(binary, args.notary_profile, args.notary_keychain)
                     notarized = True
             (folder / "QUICKSTART.md").write_text(quickstart(goos == "windows", args.relay, signed, notarized))
             (folder / "AGENT.md").write_text(agent_doc(goos == "windows", args.relay))
