@@ -215,6 +215,8 @@ def main():
     modules = dependencies()
     goroot = run("go", "env", "GOROOT")
     toolchain = run("go", "version")
+    revision = run("git", "rev-parse", "HEAD")
+    subprocess.run(["git", "diff", "--exit-code", "HEAD", "--", "."], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
     produced = []
     with tempfile.TemporaryDirectory(prefix=".jand-build-", dir=output) as temp:
         stage = Path(temp)
@@ -237,7 +239,7 @@ def main():
             (folder / "AGENT.md").write_text(agent_doc(goos == "windows", args.relay))
             shutil.copyfile(ROOT / "docs/jand-template.md", folder / "jand-template.md")
             add_licenses(folder, modules, goroot)
-            info = {"product": "jand", "version": version, "module": "github.com/jaredchao/jand",
+            info = {"product": "jand", "version": version, "module": "github.com/jaredchao/jand", "source_revision": revision,
                     "command": binary.name, "goos": goos, "goarch": goarch,
                     "toolchain": toolchain, "cgo_enabled": False,
                     "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),

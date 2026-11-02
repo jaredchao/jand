@@ -1,12 +1,12 @@
 # jand
 
-jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远程协作。当前版本 **0.4.6**。
+jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远程协作。当前版本 **0.5.0**。
 
 - **交接**：把一个任务文件（≤10 MiB）在客户端加密后交给对方。发送方上传后即可退出；Relay 只在内存中暂存密文（默认 30 分钟），接收方凭一次性的接收链接（或接收码）领取。
 - **对话与协作**：交接时加 `--chat`，这份文件同时作为邀请。对方的用户同意后，双方 Agent 围绕一个明确的目标通信：各自干活，需要时提请求、交付、回复，自己的部分做完后报告完成，由双方的用户验收。
 - **人始终是授权方**：jand 只传东西。收到的文件、对方的消息、目标和流程说明都是不可信资料，不能代替接收端用户的决定。
 
-全程只用 HTTP(S)，不用 WebSocket。Claude Code 等宿主可在后台 `chat recv --wait` 结束时唤起 Agent；0.4.6 起，Codex 还可以用持续运行的 `chat watch --agent codex --thread UUID` 向指定会话排入提醒。真实唤醒效果取决于宿主，排队成功不等于已处理。
+全程只用 HTTP(S)，不用 WebSocket。Claude Code 等宿主可在后台 `chat recv --wait` 结束时唤起 Agent；已发布 0.4.6 的 Codex watch 可排入提醒，但排队不等于已处理；当前开发版因队列积压问题暂停自动排队，见下文。
 
 ## 文档
 
@@ -20,6 +20,7 @@ jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远�
 | [docs/CONFIG_DESIGN.md](docs/CONFIG_DESIGN.md) | 开发者、运营者 | 配置分层：安全底线、Relay、本地客户端、协作流程 |
 | [deploy/INSTALL.md](deploy/INSTALL.md) | 运营者 | Relay 部署、升级与验收 |
 | [docs/validation.md](docs/validation.md) | 所有人 | 各版本的验证记录与实测结论 |
+| [docs/plugin/README.md](docs/plugin/README.md) | 插件开发者/Relay 管理员 | 固定内核清单、只读 inspect 与个人令牌本地管理 |
 
 [product-original.md](docs/product-original.md) 是原始需求，[protocol.md](docs/protocol.md) 是旧 0.1 WebSocket 原型的协议，两者只作历史记录。
 
@@ -41,7 +42,7 @@ irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex
 
 > 请帮我安装 jand：运行 `curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | JAND_NO_SETUP=1 sh`，然后运行 `jand setup --yes --agents claude --allow-claude`（如果它说需要访问令牌，先问我要）。装好后运行 `jand version` 给我看结果。
 
-安装脚本从 GitHub Release 下载本机对应的包，用发行版的 `SHA256SUMS.txt` 校验，不一致就中止；装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\Programs\jand`，并加入用户 PATH），然后直接运行 `jand setup`。可用 `JAND_VERSION=v0.4.6` 指定版本、`JAND_INSTALL_DIR` 指定位置、`JAND_NO_SETUP=1` 只安装。GitHub API 不可用或限流时，安装脚本会明确提示，并改用脚本对应的已发布版本 0.4.6；下载及 SHA-256 校验失败仍会中止。程序内置默认中继 `https://jand.zhou-wei.com`，`setup` 默认使用并保存这个地址，也可以改用自己的中继。已经装好的，直接运行：
+安装脚本从 GitHub Release 下载本机对应的包，用发行版的 `SHA256SUMS.txt` 校验，不一致就中止；装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\Programs\jand`，并加入用户 PATH），然后直接运行 `jand setup`。可用 `JAND_VERSION=v0.5.0` 指定版本、`JAND_INSTALL_DIR` 指定位置、`JAND_NO_SETUP=1` 只安装。GitHub API 不可用或限流时，安装脚本会明确提示，并改用脚本对应的已发布版本 0.5.0；下载及 SHA-256 校验失败仍会中止。程序内置默认中继 `https://jand.zhou-wei.com`，`setup` 默认使用并保存这个地址，也可以改用自己的中继。已经装好的，直接运行：
 
 ```bash
 jand setup
@@ -104,7 +105,7 @@ jand chat close <chat>                                            # 任何一方
 
 - **目标与预算**：每个目标有消息预算（默认 40 条），用完就由 Relay 强制暂停。
 - **暂停与恢复**：双方都报告完成（或按流程任一方完成）、有人要求立即暂停、预算用完，这三种情况都会让对话暂停。只有一方提出新目标、另一方接受，双方各自的用户都同意，对话才会继续。
-- **先读再回**：对方有未读的请求、回复或交付时，发回复、请求、交付会被拒绝（退出码 5），免得回复旧版本。
+- **先读再回**：本方还有未读取的对方请求、回复或交付时，发送回复、请求、交付会在送出前被拒绝（退出码 5）；先 `recv` 读取再重试。不是对方还没读本方的消息。
 - **收尾消息**：暂停后每方还能发少量回复或留言用于收尾，不计入预算。
 - **目标计划（0.4.5 起）**：开头把后续目标一次写好，对方的用户加入时认可整份计划。到了检查点，每一方按自己用户选的推进方式走：每步问人、直接推进，或先等人一段时间。只有计划里的下一个目标、逐字一致时才能不问人推进，计划外的目标一律等人；加入和结束永远不自动。自动推进在对话记录和 `chat view` 里单独标出，也不算进消耗统计里「人做决定」的次数。
 - 协议与事件细节见 [CHAT_DESIGN.md](docs/CHAT_DESIGN.md)，给 Agent 的规则见 AGENT.md 的 `chat-host`、`chat-guest`、`chat` 三节。
@@ -130,7 +131,7 @@ jand chat watch <chat>          # 在自己的终端里挂着：对方发来 Age
 
 `watch` 是给宿主不能后台唤醒的 Agent 准备的（见下文「给 Agent 的说明」）：它只看不拿，始终从 Agent 自己的读取位置去看，不会让 Agent 少收任何消息。
 
-### 后台监听并通知 Codex（0.4.6 起）
+### Codex 自动提醒（0.5.0 暂停）
 
 支持 `codex queue --resume` 的本机 Codex 可以接收 jand 的会话提醒：
 
@@ -138,15 +139,19 @@ jand chat watch <chat>          # 在自己的终端里挂着：对方发来 Age
 jand chat watch --json --agent codex --thread <Codex会话UUID> <chat>
 ```
 
-这是持续运行的监听命令。让宿主把它作为后台进程运行，Agent 就能继续做其他任务。必须明确指定同一台机器上可访问的会话 UUID，不猜测最近会话。每个 chat 只运行一个 Agent 监听器；它继承启动时的 PATH、Codex 配置和 JAND_HOME。本功能不安装系统服务、不修改全局 Agent 指令，也不需要升级 Relay。
+**0.5.0 暂停 Codex 自动提醒。** 无法确认主会话是否处理了已有提醒时，继续排队会造成积压。这个入口现在直接返回 `agent_notify_blocked` / `host_receipt_unavailable`（退出码 1），不会调用 Codex queue，也不会自动重试、消费或清理已有队列。重启、主会话忙碌与手动 recv 都不会解除这个保护。
 
-- 每 3 秒检查消息。同一次检查的新请求、回复、交付和状态事件合并为一次提醒；单独的 progress 不提醒。提醒只包含 chat 编号、固定读取提示和本机状态目录，不把对方正文、目标或密钥塞进用户指令。
-- Codex 收到提醒后用 `chat recv --json --wait 0 <chat>` 正式读取，再处理消息并继续原任务。监听器不推进接收游标、不写对话记录。相同进程内，已经成功排入的事件不会再次提醒；重启监听器可能再次提醒尚未读取的事件。
-- 排队命令失败、Relay 网络故障、429 或 5xx 会按退避重试，间隔最多 30 秒；状态分别为 `agent_notify_retry`、`watch_retry`。无效游标、无法认证、房间不存在等错误会退出，需排查后重启。对话结束时先排入最后一次提醒再退出，Ctrl-C 停止监听。
-- `agent_queued` **只证明 Codex queue 返回成功**，不证明 Agent 已被唤醒或处理。`--resume` 即使失败也可能返回成功；这类警告会原样摘要展示，不因此重复排队。非零退出或超时存在投递不确定性，重试可能重复提醒，Agent 必须以 recv 的当前事件为准。
+需要继续接收时，手动运行：
 
-当前只有 Codex 适配器。Hermes、DSH 尚未接入。Codex 忙碌、空闲及桌面宿主的真实唤醒效果需要分别验收；不支持该命令的 Codex 版本继续使用原来的轮询方式。
+```bash
+jand chat recv --json --wait 0 <chat>
+```
 
+给人看的普通 `chat watch` 保留只读行为；使用它不表示主会话正在处理消息。已经暂停的测试与监听不会自动恢复。正式版本和全局 CLI 本轮没有更新，不能把本地代码修复当成旧安装已修复。
+
+跨批 6 秒静默/12 秒合并只是底层通知回调的局部能力，**不能解决忙碌主会话的队列背压**。未来恢复自动提醒前，必须先接通确切主机的队列管理与真实处理回执，或实现经过验证的持久单提醒状态；不能用 Relay 游标、任意手动 recv 或超时伪造确认。当前不提供这类自动放行。
+
+本轮只读调查和队列时点见 [队列背压记录](docs/plugin/WATCH_BACKPRESSURE_PLAN_2026-11-02.md)。
 - 只读本机的对话记录（`$JAND_HOME/chats/<chat>.transcript.jsonl`），不连 Relay；Relay 不保存任何历史。
 - 记录随己方 jand 的收发增长，所以看到的是「己方到目前为止发出和收到的」。对方还没被 `recv` 取回的消息，这里也还没有。
 - 页面是一个独立文件：不含脚本、不加载外部资源，对方写的文字全部转义；不包含对话的令牌和密钥。自动刷新用的是 `<meta http-equiv="refresh">`，不是脚本。

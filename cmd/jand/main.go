@@ -21,7 +21,7 @@ import (
 	"github.com/jaredchao/jand/internal/transfer"
 )
 
-const version = "0.4.6"
+const version = "0.5.0"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -35,7 +35,7 @@ func usage(w io.Writer) {
   jand send [options] <file>
   jand [options] <code>
   jand chat <join|decline|send|recv|done|checkpoint|propose|accept|close> ...
-  jand chat <list|log|view> ...   see what happened in a chat
+  jand chat <list|log|view|inspect> ...   see what happened in a chat
                    (see jand chat --help)
   jand help agent        the operating guide for agents, filled in for this machine
                          (give it to your agent: "run jand help agent and follow it")
@@ -46,6 +46,7 @@ func usage(w io.Writer) {
                          (jand --version prints only the number)
   jand uninstall [--dry-run]
                          remove everything jand placed on this machine; history is archived first
+  jand task --root ABS_DIR   local task controller; one JSON request on stdin
   jand relay [--listen 127.0.0.1:8787] [--config relay.json] [--print-config]
 
 Options (before file/code):
@@ -66,7 +67,9 @@ Defaults come from $JAND_HOME/config.json (see jand config); flags and
 JAND_RELAY override it. A relay that requires an access token for sending
 reads it from JAND_ACCESS_TOKEN or the config's access_token_file.
 
-Exit codes: 0 queued/saved/confirmed, 1 failure, 2 usage, 3 delivery unconfirmed, 130 canceled.
+Exit codes: 0 queued/saved/confirmed, 1 failure, 2 usage, 3 delivery unconfirmed,
+4 chat ended or gone, 5 unread messages from the peer (this side must recv before
+replying; the attempted message was not sent), 130 canceled.
 Use --relay http://SERVER_IP:8787 for direct IP access, or https:// with TLS.
 Both clients must use the same relay and protocol version.
 The relay keeps ciphertext in RAM for at most 10 minutes.`)
@@ -95,6 +98,9 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) (code int) {
 	}
 	if args[0] == "chat" {
 		return chat(ctx, args[1:], out, stderr)
+	}
+	if args[0] == "task" {
+		return taskCommand(args[1:], os.Stdin, out, stderr)
 	}
 	if args[0] == "config" {
 		return configCommand(args[1:], out, stderr)

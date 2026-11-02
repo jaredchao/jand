@@ -204,9 +204,9 @@
         <div class="section-heading">
           <p class="eyebrow">0.4.6 · 后台提醒</p>
           <h2>各自干活，有消息再接着谈。</h2>
-          <p>Claude Code 等宿主可在后台接收命令结束时提醒 Agent。Codex 新增指定会话提醒：jand 持续监听，将未读消息提醒排入你绑定的会话。</p>
-          <p>监听器不消费消息，Agent 仍需正式读取。排队成功不等于已经唤醒；Codex 桌面宿主的忙碌与空闲场景仍待实际验收。Hermes、DSH 尚未接入。</p>
-          <a href="https://github.com/jaredchao/jand/blob/main/README.md">查看后台提醒配置</a>
+          <p>主对话负责交流，独立统筹会话安排任务，执行者完成具体工作。本地控制器限制排队与执行数量，支持修改、停止和结果核对；宿主能力不足时明确降级。</p>
+          <p>DSH 插件已接入本地控制器。Codex 自动排队提醒暂时停用，避免未处理提醒持续积压；主对话通过查询了解任务状态。真实模型持续协作与各平台体验仍需独立验收。</p>
+          <a href="https://github.com/jaredchao/jand/blob/main/README.md">查看任务管理与接收方式</a>
         </div>
       </section>
 

@@ -39,6 +39,8 @@ func chatUsage(w io.Writer) {
 See what happened (local record only; nothing is fetched from the relay):
   jand chat list [--all]                       chats on this machine: status, goal, last activity
                                                (--all: also those that ended over a week ago)
+  jand chat inspect --json <chat>             versioned local snapshot for native clients;
+                                               never fetches, consumes events or writes files
   jand chat log [--brief] [--follow] <chat>    timeline in the terminal; --brief: a line per entry;
                                                --follow keeps printing
                                                new entries as your side sends and receives
@@ -52,9 +54,9 @@ See what happened (local record only; nothing is fetched from the relay):
                                                (it only looks; the agent still receives everything);
                                                --notify also shows a desktop notification
   jand chat watch --agent codex --thread UUID <chat>
-                                               keep watching and queue notices for this exact
-                                               Codex session; tries --resume, never consumes
-                                               events; queue success does not prove a wake
+                                               automatic Codex notices are currently blocked:
+                                               host queue processing cannot be verified;
+                                               run chat recv manually (no message is queued)
 
 Message kinds (--kind): note (default), progress (no answer expected),
 request (expects an answer), reply (needs --reply-to), delivery (something is
@@ -106,6 +108,9 @@ Exit codes: 0 ok, 1 failure, 2 usage, 4 chat ended or gone,
 // cost record (docs/CORE.md). list and watch are left out: list is about no
 // one chat, and watch is for the person, not the agent.
 func chat(ctx context.Context, args []string, out, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "inspect" {
+		return inspectCommand(args[1:], out, stderr)
+	}
 	cout, cerr := &countWriter{w: out}, &countWriter{w: stderr}
 	var m chatMeter
 	code := chatRun(ctx, args, cout, cerr, &m)

@@ -502,6 +502,18 @@ func TestChatUnreadBlocksAndSupersedes(t *testing.T) {
 	if !errors.Is(err, ErrUnread) || !strings.Contains(err.Error(), "h1") {
 		t.Fatalf("unread not caught: %v", err)
 	}
+	// Exit 5 is a pre-send refusal, not uncertain delivery: no message/counter
+	// was committed. The first subsequent permitted message must still be g1.
+	s, _ := loadChat(guest.o.StateDir, id)
+	var ctr chatCounter
+	readJSONFile(s.path(guest.o.StateDir, ".counter"), &ctr)
+	if ctr.Ctr != 0 {
+		t.Fatalf("unread refusal consumed send counter: %d", ctr.Ctr)
+	}
+	peerEvents, err := host.recv(ctx, id, 0)
+	if err != nil || types(peerEvents) != "no_events" {
+		t.Fatalf("blocked message reached peer: %s %v", types(peerEvents), err)
+	}
 	// Progress and notes are never held back, and never block the peer:
 	// the host can still deliver with g1 (progress) unread.
 	if err := send(guest, ChatMessage{Kind: "progress", Text: "在写"}); err != nil {

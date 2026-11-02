@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -27,17 +28,38 @@ func ChatWatch(ctx context.Context, id string, interval time.Duration, opts Opti
 }
 
 // ChatWatchNotify watches without consuming messages and asks a host to notify
-// the bound agent. One notification covers the new actionable events in a poll.
+// the bound agent. Adjacent polls coalesce for two quiet intervals, bounded by
+// four intervals of continuous activity. Later events can notify again even
+// while an earlier queued notice remains unread.
 // A failed notification is retried with backoff; success means queued, not read.
 // Receipts live only for this process: restarting may remind about unread events.
 func ChatWatchNotify(ctx context.Context, id string, interval time.Duration, opts Options, notify func(context.Context, string) error) error {
 	if notify == nil {
 		return errors.New("agent notifier is required")
 	}
+	return ChatWatchNotifyBatch(ctx, id, interval, opts, func(ctx context.Context, chat string, _ WatchNotice) error {
+		return notify(ctx, chat)
+	})
+}
+
+// WatchNotice identifies a batch using only sequence numbers and a whitelist of
+// event categories. It never includes peer text, goals, keys or capabilities.
+type WatchNotice struct {
+	FirstSeq   uint64   `json:"first_seq"`
+	LastSeq    uint64   `json:"last_seq"`
+	Count      int      `json:"count"`
+	Categories []string `json:"categories"`
+}
+
+// ChatWatchNotifyBatch is ChatWatchNotify with explicit, non-secret batch metadata.
+func ChatWatchNotifyBatch(ctx context.Context, id string, interval time.Duration, opts Options, notify func(context.Context, string, WatchNotice) error) error {
+	if notify == nil {
+		return errors.New("agent notifier is required")
+	}
 	return chatWatch(ctx, id, interval, opts, notify)
 }
 
-func chatWatch(ctx context.Context, id string, interval time.Duration, opts Options, notify func(context.Context, string) error) error {
+func chatWatch(ctx context.Context, id string, interval time.Duration, opts Options, notify func(context.Context, string, WatchNotice) error) error {
 	o := opts.defaults()
 	s, err := loadChat(o.StateDir, id)
 	if err != nil {
@@ -52,17 +74,26 @@ func chatWatch(ctx context.Context, id string, interval time.Duration, opts Opti
 	}
 	seen := map[uint64]bool{}
 	notified := map[uint64]bool{}
-	var nextAttempt time.Time
-	delay := interval
+	var batch watchNoticeBatch
 	relayDelay := interval
 	ended := false
-	pending := false
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
 		var cur chatCursor
 		if err := readJSONFile(s.path(o.StateDir, ".cursor"), &cur); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("cannot read agent cursor: %w", err)
+		}
+		batch.discardThrough(cur.After)
+		for seq := range seen {
+			if seq <= cur.After {
+				delete(seen, seq)
+			}
+		}
+		for seq := range notified {
+			if seq <= cur.After {
+				delete(notified, seq)
+			}
 		}
 		var events []relayEvent
 		roomEnded := false
@@ -99,10 +130,7 @@ func chatWatch(ctx context.Context, id string, interval time.Duration, opts Opti
 			return err
 		}
 		relayDelay = interval
-		if !ended {
-			pending = false
-		}
-		var batch []uint64
+		now := time.Now()
 		for _, e := range events {
 			if e.Seq <= cur.After || e.From == s.Role {
 				continue
@@ -112,32 +140,29 @@ func chatWatch(ctx context.Context, id string, interval time.Duration, opts Opti
 				seen[e.Seq] = true
 				o.Emit(ev)
 			}
-			if !notified[e.Seq] && (ev.Event != "message" || ev.Kind != "progress") {
-				pending = true
-				batch = append(batch, e.Seq)
+			if notify != nil && !notified[e.Seq] && (ev.Event != "message" || ev.Kind != "progress") {
+				batch.add(e.Seq, watchCategory(ev), now)
 			}
 			if ev.Event == "closed" || ev.Event == "expired" || ev.Event == "declined" {
 				ended = true
 			}
 		}
 		ended = ended || roomEnded
-		if notify != nil && pending && !time.Now().Before(nextAttempt) {
-			if err := notify(ctx, s.ID); err != nil {
+		if notify != nil && batch.ready(now, interval, ended) {
+			if err := notify(ctx, s.ID, batch.notice()); err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
 				o.Emit(Event{Event: "agent_notify_retry", Chat: s.ID, Message: err.Error()})
-				nextAttempt = time.Now().Add(delay)
-				delay = min(delay*2, 30*time.Second)
+				batch.failed(time.Now(), interval)
 			} else {
-				for _, seq := range batch {
+				for seq := range batch.events {
 					notified[seq] = true
 				}
-				pending = false
-				delay, nextAttempt = interval, time.Time{}
+				batch = watchNoticeBatch{}
 			}
 		}
-		if ended && (notify == nil || !pending) {
+		if ended && (notify == nil || len(batch.events) == 0) {
 			return nil
 		}
 		select {
@@ -149,6 +174,83 @@ func chatWatch(ctx context.Context, id string, interval time.Duration, opts Opti
 		case <-tick.C:
 		}
 	}
+}
+
+// All state belongs to this watcher process. A restart may remind about unread
+// events again; queued is not consumed and cannot establish exactly-once delivery.
+type watchNoticeBatch struct {
+	events               map[uint64]string
+	first, last, retryAt time.Time
+	retryDelay           time.Duration
+	attempted            bool
+}
+
+func (b *watchNoticeBatch) add(seq uint64, category string, now time.Time) {
+	if b.events == nil {
+		b.events = map[uint64]string{}
+	}
+	if _, ok := b.events[seq]; ok {
+		return
+	}
+	if len(b.events) == 0 {
+		b.first = now
+	}
+	b.events[seq] = category
+	b.last = now
+}
+
+func (b *watchNoticeBatch) discardThrough(after uint64) {
+	for seq := range b.events {
+		if seq <= after {
+			delete(b.events, seq)
+		}
+	}
+	if len(b.events) == 0 {
+		*b = watchNoticeBatch{}
+	}
+}
+
+func (b *watchNoticeBatch) ready(now time.Time, interval time.Duration, ended bool) bool {
+	return len(b.events) > 0 && !now.Before(b.retryAt) && (b.attempted || ended || !now.Before(b.last.Add(2*interval)) || !now.Before(b.first.Add(4*interval)))
+}
+
+func (b *watchNoticeBatch) failed(now time.Time, interval time.Duration) {
+	if b.retryDelay == 0 {
+		b.retryDelay = interval
+	}
+	b.retryAt = now.Add(b.retryDelay)
+	b.retryDelay = min(b.retryDelay*2, 30*time.Second)
+	b.attempted = true
+}
+
+func (b *watchNoticeBatch) notice() WatchNotice {
+	n := WatchNotice{Count: len(b.events), Categories: []string{}}
+	categories := map[string]bool{}
+	for seq, category := range b.events {
+		if n.FirstSeq == 0 || seq < n.FirstSeq {
+			n.FirstSeq = seq
+		}
+		n.LastSeq = max(n.LastSeq, seq)
+		categories[category] = true
+	}
+	for c := range categories {
+		n.Categories = append(n.Categories, c)
+	}
+	slices.Sort(n.Categories)
+	return n
+}
+
+func watchCategory(ev Event) string {
+	if ev.Event == "message" {
+		if slices.Contains(MessageKinds, ev.Kind) {
+			return "message/" + ev.Kind
+		}
+		return "message/unknown"
+	}
+	if slices.Contains([]string{"opened", "joined", "done", "checkpoint", "proposal", "resumed", "closed", "expired", "declined", "error"}, ev.Event) {
+		return ev.Event
+	}
+	return "event/unknown"
 }
 
 // Only transport failures, throttling and server failures are retryable.

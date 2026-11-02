@@ -50,7 +50,7 @@ def main():
             # Each side's chat page is written by the commands themselves and reloads while the chat lives.
             for side in (host, guest):
                 page = next((side / "chats").glob(chat + ".html")).read_text(encoding="utf-8")
-                assert "两边的 Agent 正在协作" in page and 'http-equiv="refresh"' in page, side
+                assert "对话进行中" in page and "这里只显示已收到的进展" in page and 'http-equiv="refresh"' in page, side
 
             # The pattern an agent host uses: a background recv that exits
             # when the peer speaks.

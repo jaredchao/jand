@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "scope": "local",
+  "chat": {
+    "chat": "00000000000000000000000000000001",
+    "role": "host",
+    "relay": "https://relay.example.org",
+    "goal": "验收第二段",
+    "budget": 10,
+    "status": "active",
+    "started": "2026-10-30T01:00:00Z",
+    "last": "2026-10-30T01:06:00Z",
+    "messages": 3
+  },
+  "transcript_integrity": {
+    "state": "complete",
+    "valid_lines": 7
+  },
+  "timeline": [
+    {
+      "time": "2026-10-30T01:00:00Z",
+      "from": "host",
+      "kind": "started",
+      "text": "核对接口字段",
+      "budget": 10
+    },
+    {
+      "time": "2026-10-30T01:01:00Z",
+      "from": "guest",
+      "kind": "message",
+      "id": "g1",
+      "type": "request",
+      "text": "返回哪些字段？"
+    },
+    {
+      "time": "2026-10-30T01:02:00Z",
+      "from": "host",
+      "kind": "message",
+      "id": "h1",
+      "type": "delivery",
+      "reply_to": "g1",
+      "text": "schema v1"
+    },
+    {
+      "time": "2026-10-30T01:03:00Z",
+      "from": "host",
+      "kind": "done",
+      "text": "字段已核对"
+    },
+    {
+      "time": "2026-10-30T01:04:00Z",
+      "from": "relay",
+      "kind": "checkpoint",
+      "text": "all_done"
+    },
+    {
+      "time": "2026-10-30T01:05:00Z",
+      "from": "relay",
+      "kind": "resumed",
+      "text": "验收第二段",
+      "budget": 10
+    },
+    {
+      "time": "2026-10-30T01:06:00Z",
+      "from": "guest",
+      "kind": "message",
+      "id": "g2",
+      "type": "request",
+      "text": "请确认示例响应"
+    }
+  ],
+  "sections": [
+    {
+      "n": 1,
+      "goal": "核对接口字段",
+      "budget": 10,
+      "started": "2026-10-30T01:00:00Z",
+      "messages": 2,
+      "outcome": "checkpoint",
+      "timeline_indexes": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "summary_indexes": [
+        3
+      ],
+      "deliveries": [
+        "h1"
+      ],
+      "cost": {
+        "wakes": 0,
+        "empty_wakes": 0,
+        "decisions": 0,
+        "out_bytes": 100,
+        "wrote_bytes": 0
+      },
+      "cost_state": "complete",
+      "wall_seconds": 300
+    },
+    {
+      "n": 2,
+      "goal": "验收第二段",
+      "budget": 10,
+      "started": "2026-10-30T01:05:00Z",
+      "messages": 1,
+      "timeline_indexes": [
+        5,
+        6
+      ],
+      "summary_indexes": [],
+      "deliveries": [],
+      "cost": {
+        "wakes": 1,
+        "empty_wakes": 0,
+        "decisions": 0,
+        "out_bytes": 200,
+        "wrote_bytes": 0
+      },
+      "cost_state": "complete",
+      "wall_seconds": 60
+    }
+  ],
+  "messages": [
+    {
+      "id": "g1",
+      "section": 1,
+      "from": "guest",
+      "kind": "request",
+      "text": "返回哪些字段？",
+      "answers": [
+        "h1"
+      ],
+      "pending": false
+    },
+    {
+      "id": "h1",
+      "section": 1,
+      "from": "host",
+      "kind": "delivery",
+      "text": "schema v1",
+      "reply_to": "g1",
+      "answers": [],
+      "pending": false
+    },
+    {
+      "id": "g2",
+      "section": 2,
+      "from": "guest",
+      "kind": "request",
+      "text": "请确认示例响应",
+      "answers": [],
+      "pending": true
+    }
+  ],
+  "plan": {
+    "steps": [
+      {
+        "goal": "验收第二段",
+        "budget": 10
+      }
+    ],
+    "advance": "ask",
+    "proposal": null,
+    "checkpoint": null
+  },
+  "cost": {
+    "integrity": {
+      "state": "complete",
+      "valid_lines": 2
+    },
+    "records": [
+      {
+        "time": "2026-10-30T01:00:00Z",
+        "cmd": "start",
+        "out": 100,
+        "exit": 0
+      },
+      {
+        "time": "2026-10-30T01:06:00Z",
+        "cmd": "recv",
+        "out": 200,
+        "exit": 0
+      }
+    ],
+    "totals": {
+      "wakes": 1,
+      "empty_wakes": 0,
+      "decisions": 0,
+      "out_bytes": 300,
+      "wrote_bytes": 0
+    },
+    "wall_seconds": 360
+  }
+}

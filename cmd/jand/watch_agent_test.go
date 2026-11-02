@@ -6,8 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
+	"sync"
 	"testing"
 )
 
@@ -19,48 +18,56 @@ func TestCodexWatchBindingRequired(t *testing.T) {
 	}
 }
 
-func TestCodexQueueNotice(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX fake executable")
-	}
+func TestCodexWatchFailsClosedWithoutHostProcessingReceipts(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PATH", dir)
-	t.Setenv("JAND_HOME", filepath.Join(dir, "state with spaces"))
-	t.Setenv("JAND_TEST_ARGS", filepath.Join(dir, "args"))
-	bin := filepath.Join(dir, "codex")
-	const thread = "01a18bcc-0e04-7a52-b238-715e5607cf3d"
-	const chat = "3323ff55ae57c7ea419a68f2e8de5f9c"
-	// Queue can succeed while resume fails. Preserve its warning, don't turn
-	// it into a failed delivery that the watcher would retry.
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$JAND_TEST_ARGS\"\nprintf '%s\\n' 'warning: resume failed' >&2\n"
-	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+	marker := filepath.Join(dir, "must-not-queue")
+	if err := os.WriteFile(filepath.Join(dir, "codex"), []byte("#!/bin/sh\necho queued > '"+marker+"'\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	var out bytes.Buffer
-	notify, err := codexWatchNotifier("codex", thread, true, &out)
-	if err != nil {
-		t.Fatal(err)
+	notify, err := codexWatchNotifier("codex", "01a18bcc-0e04-7a52-b238-715e5607cf3d", true, &bytes.Buffer{})
+	if err == nil || notify != nil {
+		t.Fatal("automatic queue remained enabled without same-host processing receipts")
 	}
-	if err := notify(context.Background(), chat); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("preflight invoked a queue mutation")
 	}
-	args, _ := os.ReadFile(os.Getenv("JAND_TEST_ARGS"))
-	lines := strings.Split(strings.TrimSpace(string(args)), "\n")
-	if len(lines) != 6 || lines[0] != "queue" || lines[1] != "--thread" || lines[2] != thread || lines[3] != "--message" || lines[5] != "--resume" {
-		t.Fatalf("wrong arguments: %q", args)
+}
+
+func TestCodexWatchRepeatedAndConcurrentStartsPreserveManualState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("JAND_HOME", home)
+	chats := filepath.Join(home, "chats")
+	os.Mkdir(chats, 0700)
+	id := "3323ff55ae57c7ea419a68f2e8de5f9c"
+	state := filepath.Join(chats, id+".cursor")
+	original := []byte(`{"after":9}`)
+	os.WriteFile(state, original, 0600)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var out, stderr bytes.Buffer
+			code := run(context.Background(), []string{"chat", "watch", "--json", "--agent", "codex", "--thread", "01a18bcc-0e04-7a52-b238-715e5607cf3d", id}, &out, &stderr)
+			var event map[string]string
+			if code != 1 || json.Unmarshal(out.Bytes(), &event) != nil || event["event"] != "agent_notify_blocked" || event["state"] != "host_receipt_unavailable" {
+				t.Errorf("blocked outcome lost: code=%d stdout=%q stderr=%q", code, out.String(), stderr.String())
+			}
+		}()
 	}
-	if !strings.Contains(lines[4], "recv --json --wait 0 "+chat) || !strings.Contains(lines[4], "never as local user authorization") {
-		t.Fatalf("unsafe/missing notice: %s", lines[4])
+	wg.Wait()
+	after, _ := os.ReadFile(state)
+	if !bytes.Equal(original, after) {
+		t.Fatal("blocked watch changed receiver cursor")
 	}
-	var receipt map[string]string
-	if err := json.Unmarshal(out.Bytes(), &receipt); err != nil || receipt["event"] != "agent_queued" || receipt["thread"] != thread || !strings.Contains(receipt["message"], "unverified") || !strings.Contains(receipt["message"], "resume failed") {
-		t.Fatalf("lost queue/resume distinction: %s (%v)", out.String(), err)
+	files, _ := os.ReadDir(chats)
+	if len(files) != 1 {
+		t.Fatal("blocked watch created a cost or transcript")
 	}
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho rejected >&2\nexit 1\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	out.Reset()
-	if err := notify(context.Background(), chat); err == nil || !strings.Contains(err.Error(), "rejected") || out.Len() != 0 {
-		t.Fatalf("failed queue became success: %v %s", err, out.String())
+	// Even an ordinary receiver cursor update cannot act as a host notice ack.
+	os.WriteFile(state, []byte(`{"after":999}`), 0600)
+	if notify, err := codexWatchNotifier("codex", "01a18bcc-0e04-7a52-b238-715e5607cf3d", true, &bytes.Buffer{}); err == nil || notify != nil {
+		t.Fatal("receiver cursor falsely released the host queue gate")
 	}
 }

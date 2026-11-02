@@ -283,3 +283,85 @@ GitHub Release v0.4.3（预发布，7 个附件经 API 核对均已上传、大�
 - GitHub Pages 从 main/docs 构建，已读回线上 0.4.6、默认中继和 Codex 提醒文案；未操作浏览器，网站视觉与交互验收保留待确认。
 
 - 发布后新用户安装检查发现匿名 GitHub API 返回 403，安装器无法查最新版本。已为 shell/PowerShell 安装器加入明确提示的已发布版本回退（v0.4.6），不把回退版宣称为已确认的最新版本。shell 的正常查询、API 故障回退、校验失败不覆盖旧安装三条路径均通过受控测试；PowerShell 未做 Windows 实机执行。
+
+### 插件支持本地开发：固定清单、个人令牌与 inspect（2026-10-30，未发布）
+
+- 基线 main `39b3ce0064cacf590cf99f909c0aed2035a63328`，本轮未提交、推送、
+  发布、部署或全局安装。现网及现有测试令牌未读取/变更；只使用新建临时测试
+  令牌和回环 Relay。插件源码由独立 chat 负责，没有跨仓库写入。
+- `scripts/runtime_manifest.py` 从明确的 v0.4.6 发行元数据及本地原始资产生成
+  schema 1 清单。五个平台归档逐个匹配 GitHub digest 和 SHA256SUMS，包内
+  binary_sha256 匹配 BUILD-INFO。远端 tag peeled commit 已核对为 `a749a781…`。
+  Windows arm64 标为 unsupported；签名状态仅转录发行元数据。清单未上传。
+- 新增 `jand chat inspect --json <chat>`：只读本地、白名单导出 schema 1，含
+  timeline、目标分段、请求回复/交付替换、done 总结、计划/proposal/checkpoint、
+  原始成本和数值总计/墙钟秒数。不调用 Relay、不推进游标、不记录 inspect
+  自身成本、不生成页面。已有公开 0.4.6 不具备此命令。
+- **失败状态保真检查**：缺失、空、部分尾行、后起记录、损坏分别表达；成本
+  必填数字为 null、负数或累计溢出均失败，损坏总计为 null。历史不完整时状态
+  为 unknown；后起成本记录之前的目标显示 missing/null，避免伪造零消耗。
+- **业务口径一致性检查**：维持 CostRecord.Wake 规则，包括等待超时/失败返回；
+  check/own 不算 wake；原始 out/wrote 为字节，不估算 token，也不冒充 DSH
+  实际唤醒或工具输出。按新目标开始时间分段；早于首段的成本只进全局总计。
+- `scripts/relay_tokens.py` 离线发放/撤销，每 subject 只保留一枚有效令牌，注册
+  表只存 hash/状态/时间并保留撤销历史；明文只写新的 0600 文件。候选配置
+  保留所有非托管 hash，拒绝会使 Relay 公开的空 allowlist，不修改基准配置。
+  令牌只有未来部署候选配置并重启后才生效/撤销；未新增注册/配额服务。
+- 通过：`go test -race ./... -skip '^TestAppleScriptQuoting$'`、`go vet ./...`、
+  Python 工具测试、真实 CLI 交接 smoke、完整 chat smoke、新 plugin smoke。
+  最后对 inspect 增补 null/溢出/分段缺失检查后定向竞态测试通过。
+  原有 AppleScript 测试按当前 UI 边界跳过，其余 Go 测试执行；没有 UI 操作。
+- 临时认证 Relay 联测验证：发放 token 可创建会话；无 token 不能创建但可领取/
+  加入邀请；inspect 前后本地全部文件 hash 一致、待收消息仍由随后 recv 得到；
+  Relay 停止后 inspect 可用；导出不含协议 token/key；重启撤销配置后拒绝旧
+  token，同时保留原有非托管 token。没有向开发 chat 发送任何测试密钥。
+- 契约与无密钥示例：[docs/plugin/README.md](plugin/README.md)。协调目录有相同
+  内容。新 inspect 的插件集成、原生页面视觉/交互、Windows/Linux 设备运行、
+  公开分发和生产启用待后续各自验收；本轮不以本地通过代替这些结果。
+
+### 2026-11-02 审查及真实 DSH 本地联调（未发布）
+
+- 修复inspect对note显式reply_to的关联，以及晚起成本记录同时存在未完成尾行
+  时错误显示前段零成本的问题；新增回归先复现失败再通过。CLI help成功退出。
+- 用发行归档验证旧0.4.6未知inspect命令会写成本的兼容缺陷，插件改用无chat id
+  的help-first能力探测；旧版保持本地白名单投影，异常不当成正常回退。
+- 新源码Go全量竞态（跳过旧AppleScript执行测试）、vet、工具测试及实际CLI
+  plugin/chat smoke通过；源码输入摘要及双方运行的开发内核SHA已核对一致。
+- 真实DSH在隔离SDK调用plugin_manager安装，重启后使用deepseek-flash实际
+  通过原生job两次空闲唤醒、正式inbox、send/ack/arm/done/stop，与本Codex
+  完成h1→g1/g2→h2往返。未确认0、接收失败0；双方done后checkpoint all_done，
+  房间closed/ended，SDK和临时Relay均正常退出。没有fixture模型代替实际回复。
+- 插件最终32/32测试、check、4/4原生runtime fixture通过；实际模型使用的包
+  与最终展示/统计修正后的包分别记录。最终包已更新同一隔离profile，并从实际
+  installed路径补测schema1/只读哈希。原desktop/web profile及生产不变。
+- [完整审查与验收边界](plugin/REVIEW_2026-11-02.md)；
+  [无密钥集成回执](plugin/roundtrip-2026-11-02.json)。只证明单机双运行时本地
+  真实模型联调；未执行提交推送、发布部署、UI或双设备验收。
+
+### 2026-11-02 持续测试反馈：watch跨poll重复提醒（未发布）
+
+- 已核实opened/joined是两个不同事件、旧实现跨poll各排同一固定提醒；
+  新增回归先失败再通过。不是DSH重复发消息，也不是resume警告触发重试。
+- 核心改为有界跨poll合并：默认3s poll、6s quiet/12s连续活动窗口；新事件
+  不依赖cursor变化才提醒，queue仍不等于消费。部分recv、失败退避、终态、
+  重启与认证失败语义有回归。新增非秘密batch元数据和数字批次标识。
+- Go竞态（跳旧AppleScript）、vet、工具测试及默认节奏的真实CLI watch smoke
+  通过。watch smoke用fake Codex queue，无真实主机消息或UI，前后home哈希
+  相同，正式recv仍收到全部事件；不能据此宣称实际Codex唤醒已验收。
+- 同步顶层help/README的exit4/5语义；ErrUnread在seal/POST前返回，补验被拒
+  消息没送出且counter未增长。插件结构化blocked映射由插件chat实现。
+- [方案、固定内核hash与验证边界](plugin/WATCH_REVIEW_2026-11-02.md)。核心未
+  停止当前持续测试会话，未改全局CLI或生产，未提交推送/发布部署。
+
+- watch修复后与并行UX变更已三方冻结整合，页面/指南体量门禁修正后，全量Go
+  竞态（同一AppleScript排除）和vet通过，编译输入前后不变。最终整合开发内核
+  hash为`3a7241c35967314718c6bc8d05accbac066155567349105abee7f4f71d70ab0c`。
+  当前持续测试watch已由插件chat只切为字符串兼容79c版本，房间保持active。
+  现场旧3fef日志只证明不同seq继续提醒；未把count1行冒称多事件合并实证。
+
+- **后续背压缺陷未解决**：用户截图显示debounce仍会在忙碌host累计多条提醒。
+  79c watcher已由插件chat停止，DSH由用户暂停；不再恢复watch或继续复测。
+  本轮只读核对目标thread队列：16:51 revision588有9条可双重确认的旧提醒和
+  1条真实用户输入；16:53 revision598 pending=0。无队列delete/update/start/
+  ack操作，空库存不证明已处理。App Server协议有精确queue管理API，但当前
+  同host连接与处理receipt未验证。详见[背压方案](plugin/WATCH_BACKPRESSURE_PLAN_2026-11-02.md)。

@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "product": "jand",
+  "version": "0.4.6",
+  "release_tag": "v0.4.6",
+  "source_revision": "a749a781655ae7041b66560d891cd4a14b2203d3",
+  "release_url": "https://github.com/jaredchao/jand/releases/tag/v0.4.6",
+  "prerelease": true,
+  "targets": {
+    "darwin-arm64": {
+      "archive_url": "https://github.com/jaredchao/jand/releases/download/v0.4.6/jand-0.4.6-macos-arm64.tar.gz",
+      "archive_sha256": "d156bc7f721b4ff0560e6eb777c583fa8d40011947c9f9846aa5c7fac8c99d82",
+      "archive_format": "tar.gz",
+      "binary_path": "jand-0.4.6-macos-arm64/jand",
+      "binary_sha256": "34bb8de98f73db1025d4df1d81cdc07fe3b98e50c45ecc1fa128de64e1668fd1",
+      "goos": "darwin",
+      "goarch": "arm64",
+      "platform_signed": true,
+      "notarized": true,
+      "signature_evidence": "release_build_info"
+    },
+    "darwin-x64": {
+      "archive_url": "https://github.com/jaredchao/jand/releases/download/v0.4.6/jand-0.4.6-macos-amd64.tar.gz",
+      "archive_sha256": "6345c615530d430c51c73660a4c35fb3d068c451bc9380e3a12cff7c3a3abf8c",
+      "archive_format": "tar.gz",
+      "binary_path": "jand-0.4.6-macos-amd64/jand",
+      "binary_sha256": "eacd2ec7903ad1a81fffbaf95f568e56e3b8a13424e5d23f9f53aea77ebb0a82",
+      "goos": "darwin",
+      "goarch": "amd64",
+      "platform_signed": true,
+      "notarized": true,
+      "signature_evidence": "release_build_info"
+    },
+    "win32-x64": {
+      "archive_url": "https://github.com/jaredchao/jand/releases/download/v0.4.6/jand-0.4.6-windows-amd64.zip",
+      "archive_sha256": "64a9b796d6808ff60dc3ee38c978710f55beb2a7a1876b6d6d7d8b7c42ab0271",
+      "archive_format": "zip",
+      "binary_path": "jand-0.4.6-windows-amd64/jand.exe",
+      "binary_sha256": "c3af8b065fad79a3c3fa3bb283d6b17fb31bd3951f2b15ae14a7124f93c03431",
+      "goos": "windows",
+      "goarch": "amd64",
+      "platform_signed": false,
+      "notarized": false,
+      "signature_evidence": "release_build_info"
+    },
+    "linux-arm64": {
+      "archive_url": "https://github.com/jaredchao/jand/releases/download/v0.4.6/jand-0.4.6-linux-arm64.tar.gz",
+      "archive_sha256": "916d4088460944053b0932b6c700513ac5a6d4daa49ab2e49896bb19e1bdb5d3",
+      "archive_format": "tar.gz",
+      "binary_path": "jand-0.4.6-linux-arm64/jand",
+      "binary_sha256": "0d81570a3debbe0813b9463b24d87caa67232ff55b9f27eb597680ec04d4c8f7",
+      "goos": "linux",
+      "goarch": "arm64",
+      "platform_signed": false,
+      "notarized": false,
+      "signature_evidence": "release_build_info"
+    },
+    "linux-x64": {
+      "archive_url": "https://github.com/jaredchao/jand/releases/download/v0.4.6/jand-0.4.6-linux-amd64.tar.gz",
+      "archive_sha256": "105c29ff80588919a25735d3faf6be734c916b30829d2a8f9bd334668feb8f10",
+      "archive_format": "tar.gz",
+      "binary_path": "jand-0.4.6-linux-amd64/jand",
+      "binary_sha256": "b0dc259aa55ee4800a324b57d57ac207213473cf38dec034ab037d8ff70d870a",
+      "goos": "linux",
+      "goarch": "amd64",
+      "platform_signed": false,
+      "notarized": false,
+      "signature_evidence": "release_build_info"
+    }
+  },
+  "unsupported_targets": [
+    "win32-arm64"
+  ],
+  "manifest_signature": "unsigned"
+}

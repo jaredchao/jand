@@ -103,7 +103,7 @@ func TestViewHeadsWithWhereTheChatStands(t *testing.T) {
 
 	// A chat whose guest just joined has no transcript yet beyond the join.
 	c = transfer.ChatSummary{ID: c.ID, Role: "guest", Status: "active"}
-	if page := renderView(t, c, nil); !strings.Contains(page, "两边的 Agent 正在协作") {
+	if page := renderView(t, c, nil); !strings.Contains(page, "对话进行中") || strings.Contains(page, "两边的 Agent 正在协作") {
 		t.Error("active chat without entries")
 	}
 }

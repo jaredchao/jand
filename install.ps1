@@ -7,14 +7,14 @@
 # to the user PATH, and runs "jand setup".
 #
 # Environment:
-#   JAND_VERSION      a release tag such as v0.4.6 (default: the newest release)
+#   JAND_VERSION      a release tag such as v0.5.0 (default: the newest release)
 #   JAND_INSTALL_DIR  where to put jand.exe (default: %LOCALAPPDATA%\Programs\jand)
 #   JAND_NO_SETUP=1   install only; do not run jand setup
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $repo = 'jaredchao/jand'
-$fallbackVersion = 'v0.4.6'
+$fallbackVersion = 'v0.5.0'
 $dir = if ($env:JAND_INSTALL_DIR) { $env:JAND_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\jand' }
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') {
     throw "安装失败：目前只有 windows-amd64 的发行包，本机是 $($env:PROCESSOR_ARCHITECTURE)"

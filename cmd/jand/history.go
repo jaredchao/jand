@@ -51,11 +51,19 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 			chatUsage(stderr)
 			return 2
 		}
-		var agentNotify func(context.Context, string) error
+		var agentNotify func(context.Context, string, transfer.WatchNotice) error
 		if *agent != "" || *thread != "" {
 			var err error
 			agentNotify, err = codexWatchNotifier(*agent, *thread, *jsonOutput, out)
 			if err != nil {
+				if errors.Is(err, errCodexQueueReceiptsUnavailable) {
+					if *jsonOutput {
+						_ = json.NewEncoder(out).Encode(map[string]string{"event": "agent_notify_blocked", "state": "host_receipt_unavailable", "message": err.Error()})
+					} else {
+						fmt.Fprintln(stderr, err)
+					}
+					return 1
+				}
 				fmt.Fprintln(stderr, err)
 				return 2
 			}
@@ -75,7 +83,7 @@ func history(ctx context.Context, sub string, args []string, out, stderr io.Writ
 		}
 		var err error
 		if agentNotify != nil {
-			err = transfer.ChatWatchNotify(ctx, fs.Arg(0), 0, transfer.Options{Emit: emit}, agentNotify)
+			err = transfer.ChatWatchNotifyBatch(ctx, fs.Arg(0), 0, transfer.Options{Emit: emit}, agentNotify)
 		} else {
 			err = transfer.ChatWatch(ctx, fs.Arg(0), 0, transfer.Options{Emit: emit})
 		}
@@ -740,7 +748,7 @@ func viewNowFor(c transfer.ChatSummary, d viewData, proposal *viewItem) viewNow 
 		if d.Pending > 0 {
 			detail += fmt.Sprintf(" · %d 个请求等回应", d.Pending)
 		}
-		return viewNow{"live", "两边的 Agent 正在协作", detail}
+		return viewNow{"live", "对话进行中", detail + "\n你可以随时向自己的 Agent 补充要求或要求停止。这里只显示已收到的进展。"}
 	case "paused":
 		if proposal != nil && proposal.Mine {
 			return viewNow{"wait", "我方提出了下一个目标，等对方的用户同意", proposal.Text}

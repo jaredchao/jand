@@ -138,6 +138,216 @@ func TestAgentWatchRetriesCoalescesAndLeavesUnread(t *testing.T) {
 	}
 }
 
+func TestAgentWatchCoalescesAcrossPollsAndStillRemindsNewEvents(t *testing.T) {
+	_, srv := server(t, relay.DefaultConfig())
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	host, guest := newSide(t, srv.URL), newSide(t, srv.URL)
+	id, code := invite(t, ctx, host, guest) // opened exists; joined will arrive in the NEXT poll
+	opened, joined := make(chan struct{}), make(chan struct{})
+	attempts := make(chan struct{}, 10)
+	o := host.o
+	o.Emit = func(e Event) {
+		if e.Event == "opened" {
+			close(opened)
+			<-joined
+		}
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- ChatWatchNotify(ctx, id, 20*time.Millisecond, o, func(context.Context, string) error { attempts <- struct{}{}; return nil })
+	}()
+	select {
+	case <-opened:
+	case <-ctx.Done():
+		t.Fatal("watch did not see opened")
+	}
+	if _, err := ChatJoin(ctx, code, guest.o); err != nil {
+		close(joined)
+		t.Fatal(err)
+	}
+	close(joined)
+	select {
+	case <-attempts:
+	case <-ctx.Done():
+		t.Fatal("no coalesced notice")
+	}
+	select {
+	case <-attempts:
+		t.Fatal("opened and joined from adjacent polls queued duplicate reminders")
+	case <-time.After(120 * time.Millisecond):
+	}
+	// The receiver has NOT moved its cursor. A new request must still produce
+	// another bounded reminder, rather than remaining silent until cursor change.
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "request", Text: "a later new request"}, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-attempts:
+	case <-ctx.Done():
+		t.Fatal("new request suppressed while old notice remained unread")
+	}
+	ev, err := host.recv(ctx, id, 0)
+	if err != nil || types(ev) != "opened,joined,message" {
+		t.Fatalf("watch consumed events: %s %v", types(ev), err)
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("watch exit: %v", err)
+	}
+}
+
+func TestWatchBatchHasHardDeadlineAndRetryDoesNotRedebounce(t *testing.T) {
+	start := time.Unix(100, 0)
+	step := time.Second
+	var b watchNoticeBatch
+	for i := 0; i < 4; i++ {
+		b.add(uint64(i+1), "message/request", start.Add(time.Duration(i)*step))
+		if b.ready(start.Add(time.Duration(i)*step), step, false) {
+			t.Fatal("not quiet and below hard deadline")
+		}
+	}
+	if !b.ready(start.Add(4*step), step, false) {
+		t.Fatal("continuous activity starved notification")
+	}
+	b.failed(start.Add(4*step), step)
+	b.add(5, "joined", start.Add(4500*time.Millisecond))
+	if b.ready(start.Add(4500*time.Millisecond), step, true) {
+		t.Fatal("new or terminal event bypassed retry backoff")
+	}
+	if !b.ready(start.Add(5*step), step, false) {
+		t.Fatal("new event restarted debounce after a failed attempt")
+	}
+	b.discardThrough(3)
+	n := b.notice()
+	if n.Count != 2 || n.FirstSeq != 4 || n.LastSeq != 5 {
+		t.Fatalf("partial recv discarded wrong events: %+v", n)
+	}
+	b.discardThrough(5)
+	if b.ready(start.Add(6*step), step, true) {
+		t.Fatal("fully consumed batch still notified")
+	}
+	b.add(6, "message/reply", start.Add(7*step))
+	if b.ready(start.Add(8*step), step, false) || !b.ready(start.Add(9*step), step, false) {
+		t.Fatal("a fresh batch inherited stale timers")
+	}
+	if got := watchCategory(Event{Event: "peer supplied body"}); got != "event/unknown" {
+		t.Fatal("untrusted category escaped whitelist")
+	}
+}
+
+func TestAgentWatchPartialCursorNotifiesOnlyRemainder(t *testing.T) {
+	_, srv := server(t, relay.DefaultConfig())
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	host, guest := newSide(t, srv.URL), newSide(t, srv.URL)
+	id, code := invite(t, ctx, host, guest)
+	if _, err := ChatJoin(ctx, code, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	host.recv(ctx, id, 0)
+	for i := 0; i < 2; i++ {
+		if err := ChatSend(ctx, id, ChatMessage{Kind: "request", Text: "partial read fixture"}, guest.o); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, _ := loadChat(host.o.StateDir, id)
+	var cur chatCursor
+	readJSONFile(s.path(host.o.StateDir, ".cursor"), &cur)
+	page, err := s.peekPage(ctx, cur.After)
+	if err != nil || len(page.Events) != 2 {
+		t.Fatalf("fixture events: %v %v", page, err)
+	}
+	observed, release := make(chan struct{}), make(chan struct{})
+	o := host.o
+	o.Emit = func(e Event) {
+		if e.ID == "g2" {
+			close(observed)
+			<-release
+		}
+	}
+	var notice WatchNotice
+	done := make(chan error, 1)
+	go func() {
+		done <- ChatWatchNotifyBatch(ctx, id, 10*time.Millisecond, o, func(_ context.Context, _ string, n WatchNotice) error { notice = n; cancel(); return nil })
+	}()
+	select {
+	case <-observed:
+	case <-ctx.Done():
+		t.Fatal("watch did not see fixture")
+	}
+	cur.After = page.Events[0].Seq
+	if err := writeJSONFile(s.path(host.o.StateDir, ".cursor"), cur); err != nil {
+		close(release)
+		t.Fatal(err)
+	}
+	close(release)
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if notice.Count != 1 || notice.FirstSeq != page.Events[1].Seq || notice.LastSeq != page.Events[1].Seq {
+		t.Fatalf("read events remained in queued batch: %+v", notice)
+	}
+	ev, err := host.recv(context.Background(), id, 0)
+	if err != nil || len(ev) != 1 || ev[0].ID != "g2" {
+		t.Fatalf("watch consumed remainder: %+v %v", ev, err)
+	}
+}
+
+func TestAgentWatchRestartCanRemindUnconsumedEvents(t *testing.T) {
+	_, srv := server(t, relay.DefaultConfig())
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	host, guest := newSide(t, srv.URL), newSide(t, srv.URL)
+	id, code := invite(t, ctx, host, guest)
+	if _, err := ChatJoin(ctx, code, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	host.recv(ctx, id, 0)
+	if err := ChatSend(ctx, id, ChatMessage{Kind: "request", Text: "still unread after queue"}, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		watchCtx, stop := context.WithCancel(ctx)
+		calls := 0
+		err := ChatWatchNotify(watchCtx, id, time.Millisecond, host.o, func(context.Context, string) error { calls++; stop(); return nil })
+		stop()
+		if calls != 1 || !errors.Is(err, context.Canceled) {
+			t.Fatalf("watch restart %d: calls=%d err=%v", i, calls, err)
+		}
+	}
+	ev, err := host.recv(ctx, id, 0)
+	if err != nil || types(ev) != "message" {
+		t.Fatalf("notification consumed unread: %s %v", types(ev), err)
+	}
+}
+
+func TestAgentWatchDoesNotRetryCloseAfterReceiverReadsIt(t *testing.T) {
+	_, srv := server(t, relay.DefaultConfig())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	host, guest := newSide(t, srv.URL), newSide(t, srv.URL)
+	id, code := invite(t, ctx, host, guest)
+	if _, err := ChatJoin(ctx, code, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	host.recv(ctx, id, 0)
+	if err := ChatClose(ctx, id, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	err := ChatWatchNotify(ctx, id, time.Millisecond, host.o, func(context.Context, string) error {
+		calls++
+		if _, err := host.recv(ctx, id, 0); err != nil {
+			t.Fatal(err)
+		}
+		return errors.New("host queue unavailable, but receiver read meanwhile")
+	})
+	if err != nil || calls != 1 {
+		t.Fatalf("read terminal batch retried or lost stop: %v calls=%d", err, calls)
+	}
+}
+
 func TestAgentWatchProgressAndClosingRetry(t *testing.T) {
 	_, srv := server(t, relay.DefaultConfig())
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
