@@ -1,6 +1,6 @@
 # jand
 
-jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远程协作。当前版本 **0.5.0**。
+jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远程协作。当前版本 **0.5.1**。
 
 - **交接**：把一个任务文件（≤10 MiB）在客户端加密后交给对方。发送方上传后即可退出；Relay 只在内存中暂存密文（默认 30 分钟），接收方凭一次性的接收链接（或接收码）领取。
 - **对话与协作**：交接时加 `--chat`，这份文件同时作为邀请。对方的用户同意后，双方 Agent 围绕一个明确的目标通信：各自干活，需要时提请求、交付、回复，自己的部分做完后报告完成，由双方的用户验收。
@@ -26,7 +26,7 @@ irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex
 
 > 请帮我安装 jand：运行 `curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | JAND_NO_SETUP=1 sh`，然后运行 `jand setup --yes --agents claude --allow-claude`（如果它说需要访问令牌，先问我要）。装好后运行 `jand version` 给我看结果。
 
-安装脚本从 GitHub Release 下载本机对应的包，用发行版的 `SHA256SUMS.txt` 校验，不一致就中止；装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\Programs\jand`，并加入用户 PATH），然后直接运行 `jand setup`。可用 `JAND_VERSION=v0.5.0` 指定版本、`JAND_INSTALL_DIR` 指定位置、`JAND_NO_SETUP=1` 只安装。GitHub API 不可用或限流时，安装脚本会明确提示，并改用脚本对应的已发布版本 0.5.0；下载及 SHA-256 校验失败仍会中止。程序内置默认中继 `https://jand.zhou-wei.com`，`setup` 默认使用并保存这个地址，也可以改用自己的中继。已经装好的，直接运行：
+安装脚本从 GitHub Release 下载本机对应的包，用发行版的 `SHA256SUMS.txt` 校验，不一致就中止；装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\Programs\jand`，并加入用户 PATH），然后直接运行 `jand setup`。可用 `JAND_VERSION=v0.5.1` 指定版本、`JAND_INSTALL_DIR` 指定位置、`JAND_NO_SETUP=1` 只安装。GitHub API 不可用或限流时，安装脚本会明确提示，并改用脚本对应的已发布版本 0.5.1；下载及 SHA-256 校验失败仍会中止。程序内置默认中继 `https://jand.zhou-wei.com`，`setup` 默认使用并保存这个地址，也可以改用自己的中继。已经装好的，直接运行：
 
 ```bash
 jand setup
@@ -133,7 +133,7 @@ jand chat watch <chat>          # 在自己的终端里挂着：对方发来 Age
 
 ### Codex 自动提醒（0.5.0 暂停）
 
-Jand 0.5.0 的 Codex 自动提醒入口返回 `agent_notify_blocked`（退出码 1）。需要处理消息时，运行：
+Jand 0.5.0 起，Codex 自动提醒入口返回 `agent_notify_blocked`（退出码 1）。需要处理消息时，运行：
 
 ```bash
 jand chat recv --json --wait 0 <chat>

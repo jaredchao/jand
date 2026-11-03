@@ -14,7 +14,7 @@
 set -eu
 
 REPO="jaredchao/jand"
-FALLBACK_VERSION="v0.5.0"
+FALLBACK_VERSION="v0.5.1"
 DIR="${JAND_INSTALL_DIR:-${HOME}/.local/bin}"
 
 say() { printf '%s\n' "$*"; }
