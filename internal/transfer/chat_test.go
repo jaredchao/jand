@@ -780,3 +780,34 @@ func TestSendWarnsAboutUnfilledTemplate(t *testing.T) {
 		}
 	}
 }
+
+func TestChatCloseReportsLocalTranscriptFailure(t *testing.T) {
+	_, srv := server(t, relay.DefaultConfig())
+	ctx := context.Background()
+	host, guest := newSide(t, srv.URL), newSide(t, srv.URL)
+	id, rawCode := invite(t, ctx, host, guest)
+	if _, err := ChatJoin(ctx, rawCode, guest.o); err != nil {
+		t.Fatal(err)
+	}
+	s, err := loadChat(guest.o.StateDir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcript := s.path(guest.o.StateDir, ".transcript.jsonl")
+	if err := os.Remove(transcript); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(transcript, 0700); err != nil {
+		t.Fatal(err)
+	}
+	guest.events = nil
+	if err := ChatClose(ctx, id, guest.o); err == nil || !strings.Contains(err.Error(), "relay confirmed closure") {
+		t.Fatalf("expected partial closure error, got %v", err)
+	}
+	if len(guest.events) != 0 {
+		t.Fatalf("unexpected success event: %v", types(guest.events))
+	}
+	if events, err := host.recv(ctx, id, 0); err != nil || !strings.Contains(types(events), "closed") {
+		t.Fatalf("peer did not see relay closure: %v, %v", types(events), err)
+	}
+}

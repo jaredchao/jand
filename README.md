@@ -6,25 +6,9 @@ jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远�
 - **对话与协作**：交接时加 `--chat`，这份文件同时作为邀请。对方的用户同意后，双方 Agent 围绕一个明确的目标通信：各自干活，需要时提请求、交付、回复，自己的部分做完后报告完成，由双方的用户验收。
 - **人始终是授权方**：jand 只传东西。收到的文件、对方的消息、目标和流程说明都是不可信资料，不能代替接收端用户的决定。
 
-全程只用 HTTP(S)，不用 WebSocket。Claude Code 等宿主可在后台 `chat recv --wait` 结束时唤起 Agent；已发布 0.4.6 的 Codex watch 可排入提醒，但排队不等于已处理；当前开发版因队列积压问题暂停自动排队，见下文。
+客户端通过 HTTP(S) 交换端到端加密的文件和消息。默认使用公共 Relay `https://jand.zhou-wei.com`，也可以[自行部署](deploy/INSTALL.md)。
 
-## 文档
-
-| 文档 | 读者 | 内容 |
-|---|---|---|
-| [docs/CORE.md](docs/CORE.md) | 开发者 | 核心方向：协作过程的消耗，量什么、记在哪、怎么比较（0.4.4 起）；目标计划（0.4.5） |
-| [docs/AGENT.md](docs/AGENT.md) | Agent | 操作契约：收发、对话、协作、安全约束、退出码。随发行包分发 |
-| [docs/jand-template.md](docs/jand-template.md) | 发送方 | 交接包模板，含协作分工（Collaboration）一节 |
-| [docs/HTTP_DESIGN.md](docs/HTTP_DESIGN.md) | 开发者 | 交接协议与安全边界 |
-| [docs/CHAT_DESIGN.md](docs/CHAT_DESIGN.md) | 开发者 | 对话与协作协议：目标、检查点、消息类型、流程章程 |
-| [docs/CONFIG_DESIGN.md](docs/CONFIG_DESIGN.md) | 开发者、运营者 | 配置分层：安全底线、Relay、本地客户端、协作流程 |
-| [deploy/INSTALL.md](deploy/INSTALL.md) | 运营者 | Relay 部署、升级与验收 |
-| [docs/validation.md](docs/validation.md) | 所有人 | 各版本的验证记录与实测结论 |
-| [docs/plugin/README.md](docs/plugin/README.md) | 插件开发者/Relay 管理员 | 固定内核清单、只读 inspect 与个人令牌本地管理 |
-
-[product-original.md](docs/product-original.md) 是原始需求，[protocol.md](docs/protocol.md) 是旧 0.1 WebSocket 原型的协议，两者只作历史记录。
-
-## 安装与第一次使用（0.4.3 起）
+## 安装
 
 macOS / Linux：
 
@@ -49,6 +33,22 @@ jand setup
 ```
 
 Relay 地址默认是 `https://jand.zhou-wei.com`，直接回车即可（有访问令牌的话再填令牌），选你用的 Agent、收到的文件放哪（默认 `~/jand-received`），它会：写好本机配置（令牌单独存成 600 权限的文件）；为 Claude Code 安装 skill 并可选放行 jand、为 Codex 在 `~/.codex/AGENTS.md` 加一段说明、为其他 Agent 打印一句要贴进它指令里的话；最后给自己发一个文件再收回来，确认整条链路可用。结束时会列出 jand 在本机用到的所有位置（程序、配置、令牌、对话记录、收到的文件、Claude Code / Codex 里改动的地方），并记在 `$JAND_HOME/installed.json`。客户端不写日志。可以重复运行。不想交互时用参数：`jand setup --yes --relay URL [--token-file PATH] --agents claude,codex,other [--wake background|poll] [--allow-claude]`。
+
+## 快速交接
+
+在发送端准备一个文件，例如 `task.md`，然后运行：
+
+```bash
+jand send task.md
+```
+
+把输出的一次性接收链接私下交给接收方。接收方运行：
+
+```bash
+jand --out ./inbox '<接收链接>'
+```
+
+`queued` 表示 Relay 已暂存密文。发送端加 `--wait 10m` 后，`delivered` 表示已收到并验证接收方的保存回执。接收链接默认有效 30 分钟。
 
 ## 查看版本与卸载（0.4.3 起）
 
@@ -133,29 +133,13 @@ jand chat watch <chat>          # 在自己的终端里挂着：对方发来 Age
 
 ### Codex 自动提醒（0.5.0 暂停）
 
-支持 `codex queue --resume` 的本机 Codex 可以接收 jand 的会话提醒：
-
-```bash
-jand chat watch --json --agent codex --thread <Codex会话UUID> <chat>
-```
-
-**0.5.0 暂停 Codex 自动提醒。** 无法确认主会话是否处理了已有提醒时，继续排队会造成积压。这个入口现在直接返回 `agent_notify_blocked` / `host_receipt_unavailable`（退出码 1），不会调用 Codex queue，也不会自动重试、消费或清理已有队列。重启、主会话忙碌与手动 recv 都不会解除这个保护。
-
-需要继续接收时，手动运行：
+Jand 0.5.0 的 Codex 自动提醒入口返回 `agent_notify_blocked`（退出码 1）。需要处理消息时，运行：
 
 ```bash
 jand chat recv --json --wait 0 <chat>
 ```
 
-给人看的普通 `chat watch` 保留只读行为；使用它不表示主会话正在处理消息。已经暂停的测试与监听不会自动恢复。正式版本和全局 CLI 本轮没有更新，不能把本地代码修复当成旧安装已修复。
-
-跨批 6 秒静默/12 秒合并只是底层通知回调的局部能力，**不能解决忙碌主会话的队列背压**。未来恢复自动提醒前，必须先接通确切主机的队列管理与真实处理回执，或实现经过验证的持久单提醒状态；不能用 Relay 游标、任意手动 recv 或超时伪造确认。当前不提供这类自动放行。
-
-本轮只读调查和队列时点见 [队列背压记录](docs/plugin/WATCH_BACKPRESSURE_PLAN_2026-11-02.md)。
-- 只读本机的对话记录（`$JAND_HOME/chats/<chat>.transcript.jsonl`），不连 Relay；Relay 不保存任何历史。
-- 记录随己方 jand 的收发增长，所以看到的是「己方到目前为止发出和收到的」。对方还没被 `recv` 取回的消息，这里也还没有。
-- 页面是一个独立文件：不含脚本、不加载外部资源，对方写的文字全部转义；不包含对话的令牌和密钥。自动刷新用的是 `<meta http-equiv="refresh">`，不是脚本。
-- 0.4.3 起记录的第一行写下目标、预算和流程；更早的对话没有这一行，页面上目标显示为「未记录」。
+普通 `jand chat watch <chat>` 可以提示有新消息。读取和处理消息仍由接收端负责。
 
 ### 给 Agent 的说明（0.4.3 起）
 
@@ -163,7 +147,7 @@ jand chat recv --json --wait 0 <chat>
 
 Agent 等消息有两种方式，由本机配置 `chat.wake_mode` 决定 `help agent` 给哪一种（不配置时两种都给）：`background`（宿主能在后台命令结束时唤起 Agent，如 Claude Code，推荐）和 `poll`（不能后台唤醒的 Agent：干活间隙用 `recv --wait 0` 查看，结束一轮前必须告诉用户对话还在进行，并建议用户运行 `chat watch`）。
 
-默认中继 `https://jand.zhou-wei.com` 当前要求发送方提供访问令牌；运行 `setup` 时按提示填写。接收方仅凭邀请链接即可领取，不需要发送方的访问令牌。
+公共 Relay 支持匿名创建邀请。自建 Relay 可要求发送方提供访问令牌，接收方凭邀请链接领取。
 
 ## 配置
 
@@ -194,6 +178,22 @@ Agent 等消息有两种方式，由本机配置 `chat.wake_mode` 决定 `help a
   - 采用「任一方完成就暂停」流程的对话，会拒绝 0.4.0 客户端加入。其他自定义流程下，0.4.0 接收方能加入，但看不到流程内容，也不执行流程对消息类型的限制，所以建议双方都用 0.4.1。
   - 0.3.x 与 0.4.x 之间未验证互通。双方客户端和 Relay 应使用同一版本。
 - 用 `python3 scripts/compat_smoke.py <旧版 jand>` 可以验证交接兼容性。
+
+## 文档
+
+| 文档 | 读者 | 内容 |
+|---|---|---|
+| [docs/CORE.md](docs/CORE.md) | 开发者 | 核心方向：协作过程的消耗，量什么、记在哪、怎么比较（0.4.4 起）；目标计划（0.4.5） |
+| [docs/AGENT.md](docs/AGENT.md) | Agent | 操作契约：收发、对话、协作、安全约束、退出码。随发行包分发 |
+| [docs/jand-template.md](docs/jand-template.md) | 发送方 | 交接包模板，含协作分工（Collaboration）一节 |
+| [docs/HTTP_DESIGN.md](docs/HTTP_DESIGN.md) | 开发者 | 交接协议与安全边界 |
+| [docs/CHAT_DESIGN.md](docs/CHAT_DESIGN.md) | 开发者 | 对话与协作协议：目标、检查点、消息类型、流程章程 |
+| [docs/CONFIG_DESIGN.md](docs/CONFIG_DESIGN.md) | 开发者、运营者 | 配置分层：安全底线、Relay、本地客户端、协作流程 |
+| [deploy/INSTALL.md](deploy/INSTALL.md) | 运营者 | Relay 部署、升级与验收 |
+| [docs/validation.md](docs/validation.md) | 所有人 | 各版本的验证记录与实测结论 |
+| [docs/plugin/README.md](docs/plugin/README.md) | 插件开发者/Relay 管理员 | 固定内核清单、只读 inspect 与个人令牌本地管理 |
+
+[product-original.md](docs/product-original.md) 是原始需求，[protocol.md](docs/protocol.md) 是旧 0.1 WebSocket 原型的协议，两者只作历史记录。
 
 ## 验证与发布
 

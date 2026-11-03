@@ -623,23 +623,23 @@ type TranscriptLine struct {
 	Mode string     `json:"mode,omitempty"`
 }
 
-func (s *chatState) record(dir, from, kind, text string) {
-	s.writeRecord(dir, TranscriptLine{From: from, Kind: kind, Text: text})
+func (s *chatState) record(dir, from, kind, text string) error {
+	return s.writeRecord(dir, TranscriptLine{From: from, Kind: kind, Text: text})
 }
 
 func (s *chatState) recordMessage(dir, from, id string, m ChatMessage) {
 	s.writeRecord(dir, TranscriptLine{From: from, Kind: "message", ID: id, Type: m.Kind, ReplyTo: m.ReplyTo, Supersedes: m.Supersedes, Text: m.Text})
 }
 
-func (s *chatState) writeRecord(dir string, l TranscriptLine) {
+func (s *chatState) writeRecord(dir string, l TranscriptLine) error {
 	l.Time = time.Now().UTC().Format(time.RFC3339)
 	line, _ := json.Marshal(l)
 	f, err := os.OpenFile(s.path(dir, ".transcript.jsonl"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
 	if err != nil {
-		return
+		return err
 	}
-	f.Write(append(line, '\n'))
-	f.Close()
+	_, err = f.Write(append(line, '\n'))
+	return errors.Join(err, f.Close())
 }
 
 // ChatSend sends one message. An empty kind means note; a reply must name
@@ -901,9 +901,11 @@ func ChatPropose(ctx context.Context, id, goal string, budget int, opts Options)
 	if err = s.post(ctx, "propose", body, http.StatusNoContent); err != nil {
 		return err
 	}
-	s.record(o.StateDir, s.Role, "proposal", goal)
 	if len(s.Plan) > 0 {
 		s.updatePlan(o.StateDir, func(p *planState) { p.Proposed = true })
+	}
+	if err := s.record(o.StateDir, s.Role, "proposal", goal); err != nil {
+		return fmt.Errorf("relay accepted the proposal, but recording it in the local transcript failed: %w", err)
 	}
 	o.Emit(Event{Event: "proposed", Chat: s.ID, Goal: goal, Budget: budget})
 	return nil
@@ -942,7 +944,9 @@ func ChatClose(ctx context.Context, id string, opts Options) error {
 		return chatError(resp)
 	}
 	resp.Body.Close()
-	s.record(o.StateDir, s.Role, "closed", "")
+	if err := s.record(o.StateDir, s.Role, "closed", ""); err != nil {
+		return fmt.Errorf("relay confirmed closure, but recording it in the local transcript failed: %w", err)
+	}
 	o.Emit(Event{Event: "closed", Chat: s.ID, By: "self"})
 	return nil
 }

@@ -39,7 +39,9 @@ Relay 的运行日志写入 Supervisor 配置中的 `stdout_logfile`。示例配
 
 **可选：配置文件（0.4.1 起）。** 需要调整超时、容量、对话预算或暂停后收尾消息上限时，把 [relay.json.example](relay.json.example) 复制为 `/etc/jand/relay.json`，按需删改（没写的字段保持默认值；拼错的字段名会让 Relay 拒绝启动，而不是被悄悄忽略），然后在 Supervisor 的 `command` 末尾加 `--config /etc/jand/relay.json`。命令行上的 `--listen`、`--max-sessions` 仍然优先于配置文件。上线前先运行 `jand relay --config /etc/jand/relay.json --print-config` 查看最终生效的值；启动日志也会记录所用的配置文件路径。不加 `--config` 时，行为与此前版本完全一致。
 
-**可选：访问令牌（0.4.2 起）。** 不开启时，任何知道域名的人都能用这台 Relay 中转文件（内容仍是端到端加密的，Relay 看不到，但容量会被占用）。开启后，只有带令牌的一方才能**新建**交接或对话；领取、加入和对话中的消息都不需要令牌，所以只需把令牌发给会从这台 Relay 发东西的人，接收方拿到码照常能收。生成令牌并计算哈希：
+**官方公共 Relay。** `jand.zhou-wei.com` 对公众开放。安装后应能直接发起交接和协作，无需另行索取令牌。部署或更新后，用未配置令牌的客户端通过公网创建一次邀请，确认 `/healthz` 返回 `access: false`。
+
+**私有 Relay 可选：访问令牌（0.4.2 起）。** 不开启时，任何知道域名的人都能用这台 Relay 中转文件（内容仍是端到端加密的，Relay 看不到，但容量会被占用）。开启后，只有带令牌的一方才能**新建**交接或对话；领取、加入和对话中的消息都不需要令牌，所以只需把令牌发给会从这台 Relay 发东西的人，接收方拿到码照常能收。生成令牌并计算哈希：
 
 ```bash
 openssl rand -base64 32                      # 令牌，私下发给发送方
@@ -52,16 +54,26 @@ printf %s '<令牌>' | shasum -a 256          # 哈希，写进配置（Linux �
 
 ## 升级已部署的 Relay
 
-替换前确认没有同事正在收发：重启会丢失所有未领取的密文。按第 1 节选好架构并校验后：
+选择维护窗口并等待正在使用的交接和协作结束。Relay 的房间状态和待领取密文保存在内存中，重启后需要重新发起。先校验新二进制，再在服务器上保留当前可执行文件和配置的备份。
 
 ```bash
-sudo install -m 0755 ./jand /usr/local/bin/jand
+backup="/usr/local/bin/jand.previous-$(date +%Y%m%d%H%M%S)"
+sudo cp -p /usr/local/bin/jand "$backup"
+sudo install -m 0755 ./jand /usr/local/bin/jand.next
+sudo mv /usr/local/bin/jand.next /usr/local/bin/jand
 sudo supervisorctl restart jand-relay
-sudo supervisorctl tail jand-relay | tail -n 5
+sudo supervisorctl status jand-relay
 curl -fsS http://127.0.0.1:8787/healthz
 ```
 
-启动行的 `version=` 应为新版本，`uptime_seconds` 应从 0 附近重新计数。
+确认版本和运行时间后，从服务器外执行 HTTPS 和收发验收。若新进程启动失败或验收失败，按同样方式恢复备份二进制并重启：
+
+```bash
+sudo install -m 0755 "$backup" /usr/local/bin/jand.next
+sudo mv /usr/local/bin/jand.next /usr/local/bin/jand
+sudo supervisorctl restart jand-relay
+curl -fsS http://127.0.0.1:8787/healthz
+```
 
 客户端要不要跟着升级，分两种情况：
 
