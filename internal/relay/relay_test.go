@@ -3,6 +3,8 @@ package relay
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -170,12 +172,23 @@ func TestLinkLandingPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != 200 || !strings.Contains(string(body), "jand 接收链接") ||
-		!strings.Contains(string(body), "一键复制") ||
-		!strings.Contains(resp.Header.Get("Content-Security-Policy"), "default-src 'none'") ||
-		!strings.Contains(resp.Header.Get("Content-Security-Policy"), "script-src 'unsafe-inline'") {
-		t.Fatalf("%d %q %v", resp.StatusCode, body, resp.Header)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(body)
+	if resp.StatusCode != 200 || !strings.Contains(page, "jand 接收链接") || !strings.Contains(page, "一键复制") {
+		t.Fatalf("unexpected landing page response: HTTP %d", resp.StatusCode)
+	}
+	_, scriptAndRest, ok := strings.Cut(page, "<script>")
+	script, _, closed := strings.Cut(scriptAndRest, "</script>")
+	if !ok || !closed || script == "" {
+		t.Fatal("landing page script is missing")
+	}
+	hash := sha256.Sum256([]byte(script))
+	want := "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-" + base64.StdEncoding.EncodeToString(hash[:]) + "'"
+	if got := resp.Header.Get("Content-Security-Policy"); got != want {
+		t.Fatalf("CSP = %q, want %q", got, want)
 	}
 }

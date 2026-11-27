@@ -21,7 +21,7 @@ import (
 	"github.com/jaredchao/jand/internal/transfer"
 )
 
-const version = "0.5.1"
+const version = "0.6.0"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -41,7 +41,7 @@ func usage(w io.Writer) {
                          (give it to your agent: "run jand help agent and follow it")
   jand help template     the structure of a handoff packet
   jand setup             first-run configuration: relay, access token, your agents, self-test
-  jand demo              run a 30-second local sandbox demo (two agents + human decision + view page)
+  jand demo              run a local sandbox demo with two simulated agents and a human decision
   jand config [--json]   show the effective client configuration and its sources
   jand version           version, program path, config, and whether the relay is compatible
                          (jand --version prints only the number)

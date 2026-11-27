@@ -20,7 +20,7 @@
         <a class="brand" href="./" aria-current="page">
           <svg class="logo" viewBox="0 0 160 160" aria-hidden="true"><path d="M56 28H39C30 28 23 35 23 44V116C23 125 30 132 39 132H56M104 28H121C130 28 137 35 137 44V116C137 125 130 132 121 132H104" class="logo-ink"/><path d="M60 80H93M84 62L103 80L84 98" class="logo-accent"/></svg>
           <span>jand</span>
-          <span class="brand-ver">v0.5.1</span>
+          <span class="brand-ver">v0.6.0</span>
         </a>
         <div class="links">
           <a href="#scenarios">场景</a>
@@ -55,10 +55,10 @@
         <div class="hero-window" aria-label="双 Agent 跨机协作实时演示">
           <div class="win-bar">
             <div class="win-dots"><i></i><i></i><i></i></div>
-            <div class="win-tabs" role="tablist" aria-label="切换协作场景">
-              <button class="win-tab active" type="button" data-scene="data">数据对口径</button>
-              <button class="win-tab" type="button" data-scene="api">前后端联调</button>
-              <button class="win-tab" type="button" data-scene="ops">跨机排查</button>
+            <div class="win-tabs" role="group" aria-label="切换协作场景">
+              <button class="win-tab active" type="button" aria-pressed="true" data-scene="data">数据对口径</button>
+              <button class="win-tab" type="button" aria-pressed="false" data-scene="api">前后端联调</button>
+              <button class="win-tab" type="button" aria-pressed="false" data-scene="ops">跨机排查</button>
             </div>
           </div>
           <div class="win-body" id="hero-scene">
@@ -256,7 +256,7 @@
               <pre><code>irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex</code></pre>
               <button class="copy-mini" type="button" data-copy="irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex">复制</button>
             </div>
-            <p class="muted">访问 GitHub 不稳定时，可从本站下载预编译包与校验清单：<a href="https://jand.zhou-wei.com/downloads/index.json" target="_blank" rel="noopener">downloads/index.json</a>。装好后跑一条 <code>jand demo</code>，30 秒单人体验全流程。</p>
+            <p class="muted">访问 GitHub 不稳定时，可从备用下载源获取预编译包与校验清单。装好后运行 <code>jand demo</code>，在本机体验由两个模拟 Agent 完成的协作流程。<a href="https://jand.zhou-wei.com/downloads/index.json" target="_blank" rel="noopener">下载索引</a></p>
           </article>
           <article class="start-card">
             <h3>3. 公共中继与插件生态</h3>
@@ -326,24 +326,33 @@
         var tabs = document.querySelectorAll('.win-tab');
         for (var i = 0; i < tabs.length; i++) {
           tabs[i].addEventListener('click', function () {
-            for (var j = 0; j < tabs.length; j++) tabs[j].classList.remove('active');
-            this.classList.add('active');
+            for (var j = 0; j < tabs.length; j++) {
+              var active = tabs[j] === this;
+              tabs[j].classList.toggle('active', active);
+              tabs[j].setAttribute('aria-pressed', String(active));
+            }
             var key = this.getAttribute('data-scene');
             if (sceneEl && scenes[key]) sceneEl.innerHTML = scenes[key];
           });
         }
 
         // Copy helper
-        function copyText(text, btn, doneLabel) {
-          var orig = btn.dataset.orig || btn.textContent;
-          btn.dataset.orig = orig;
-          function done() {
+        var copyTimers = new WeakMap();
+        async function copyText(text, btn, doneLabel) {
+          var original = btn.dataset.orig || btn.textContent;
+          btn.dataset.orig = original;
+          clearTimeout(copyTimers.get(btn));
+          try {
+            await navigator.clipboard.writeText(text);
             btn.textContent = doneLabel;
             btn.classList.add('copied');
-            setTimeout(function () { btn.textContent = orig; btn.classList.remove('copied'); }, 2000);
-          }
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(done, function () {});
+            copyTimers.set(btn, setTimeout(function () {
+              btn.textContent = original;
+              btn.classList.remove('copied');
+            }, 2000));
+          } catch (error) {
+            btn.textContent = '复制失败，请手动复制';
+            btn.classList.remove('copied');
           }
         }
         var aiBtn = document.getElementById('copy-ai-prompt');

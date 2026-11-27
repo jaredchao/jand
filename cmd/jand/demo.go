@@ -27,7 +27,7 @@ func demoCommand(ctx context.Context, args []string, stdin io.Reader, out, stder
 	yes := fs.Bool("yes", false, "non-interactive: accept the default decision automatically")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintln(out, `jand demo — 单人本地体验：围观两个 AI 通过真实加密中继对齐接口并等你拍板
+			fmt.Fprintln(out, `jand demo — 单人本地演练：看两个模拟 Agent 通过本地加密中继对齐接口并等你拍板
 
 用法：
   jand demo [--fast] [--no-open] [--yes]
@@ -79,6 +79,12 @@ func demoCommand(ctx context.Context, args []string, stdin io.Reader, out, stder
 		fmt.Fprintf(stderr, "创建演练沙盒失败：%v\n", err)
 		return 1
 	}
+	keepView := false
+	defer func() {
+		if !keepView {
+			os.RemoveAll(root)
+		}
+	}()
 	hostDir := filepath.Join(root, "host")
 	guestDir := filepath.Join(root, "guest")
 	inboxDir := filepath.Join(root, "inbox")
@@ -97,7 +103,7 @@ func demoCommand(ctx context.Context, args []string, stdin io.Reader, out, stder
 	}
 
 	fmt.Fprintln(out, "=== jand demo · 单人本地演练 ===")
-	fmt.Fprintln(out, "场景：前端 Agent（我方）与后端 Agent（对方）跨机对齐 GET /api/v1/users 接口")
+	fmt.Fprintln(out, "场景：模拟前端 Agent（我方）与后端 Agent（对方）跨机对齐 GET /api/v1/users 接口")
 	fmt.Fprintf(out, "环境：本机临时加密 Relay（%s），不影响你的真实配置与历史。\n\n", relayURL)
 
 	// 1. Host creates encrypted handoff + chat invitation.
@@ -111,6 +117,13 @@ func demoCommand(ctx context.Context, args []string, stdin io.Reader, out, stder
 	}
 	guestOpts := func() transfer.Options {
 		return transfer.Options{RelayURL: relayURL, OutputDir: inboxDir, StateDir: guestDir, Emit: func(transfer.Event) {}}
+	}
+	recv := func(side string, opts transfer.Options) bool {
+		if err := transfer.ChatRecv(ctx, chatID, 0, nil, opts); err != nil {
+			fmt.Fprintf(stderr, "%s收取演练消息失败：%v\n", side, err)
+			return false
+		}
+		return true
 	}
 
 	goal := "对齐 GET /api/v1/users 响应字段，解决命名与时间格式冲突，交付确认版 schema"
@@ -138,7 +151,9 @@ func demoCommand(ctx context.Context, args []string, stdin io.Reader, out, stder
 	pause(450 * time.Millisecond)
 
 	// Drain host's opened/joined notifications.
-	_ = transfer.ChatRecv(ctx, chatID, 0, nil, hostOpts())
+	if !recv("我方", hostOpts()) {
+		return 1
+	}
 
 	// 3. Host sends request h1 and draft delivery h2.
 	if err := transfer.ChatSend(ctx, chatID, transfer.ChatMessage{
@@ -159,7 +174,9 @@ func demoCommand(ctx context.Context, args []string, stdin io.Reader, out, stder
 	pause(500 * time.Millisecond)
 
 	// 4. Guest reads and replies with 2 concrete findings.
-	_ = transfer.ChatRecv(ctx, chatID, 0, nil, guestOpts())
+	if !recv("对方", guestOpts()) {
+		return 1
+	}
 	if err := transfer.ChatSend(ctx, chatID, transfer.ChatMessage{
 		Kind:    "reply",
 		ReplyTo: "h1",
@@ -172,7 +189,9 @@ func demoCommand(ctx context.Context, args []string, stdin io.Reader, out, stder
 	pause(450 * time.Millisecond)
 
 	// 5. Host reads peer reply, pauses for the real human decision!
-	_ = transfer.ChatRecv(ctx, chatID, 0, nil, hostOpts())
+	if !recv("我方", hostOpts()) {
+		return 1
+	}
 	choice := askDemoDecision(*yes, stdin, out)
 
 	var decisionSummary, finalSchema string
@@ -205,7 +224,9 @@ func demoCommand(ctx context.Context, args []string, stdin io.Reader, out, stder
 	pause(450 * time.Millisecond)
 
 	// 6. Guest confirms and both sides report done -> Relay checkpoint -> Close.
-	_ = transfer.ChatRecv(ctx, chatID, 0, nil, guestOpts())
+	if !recv("对方", guestOpts()) {
+		return 1
+	}
 	if err := transfer.ChatSend(ctx, chatID, transfer.ChatMessage{
 		Kind:    "reply",
 		ReplyTo: "h4",
@@ -218,13 +239,17 @@ func demoCommand(ctx context.Context, args []string, stdin io.Reader, out, stder
 		fmt.Fprintf(stderr, "对方 done 失败：%v\n", err)
 		return 1
 	}
-	_ = transfer.ChatRecv(ctx, chatID, 0, nil, hostOpts())
+	if !recv("我方", hostOpts()) {
+		return 1
+	}
 	if err := transfer.ChatDone(ctx, chatID, decisionSummary+" 终版 schema（h3，取代 h2）已由双方确认一致。", hostOpts()); err != nil {
 		fmt.Fprintf(stderr, "我方 done 失败：%v\n", err)
 		return 1
 	}
 	// Drain checkpoint event and close cleanly.
-	_ = transfer.ChatRecv(ctx, chatID, 0, nil, hostOpts())
+	if !recv("我方", hostOpts()) {
+		return 1
+	}
 	if err := transfer.ChatClose(ctx, chatID, hostOpts()); err != nil {
 		fmt.Fprintf(stderr, "关闭演练对话失败：%v\n", err)
 		return 1
@@ -242,6 +267,7 @@ func demoCommand(ctx context.Context, args []string, stdin io.Reader, out, stder
 		fmt.Fprintf(stderr, "生成对话页面失败：%v\n", err)
 		return 1
 	}
+	keepView = true
 
 	fmt.Fprintf(out, "\n演练完成！对话视图已生成：\n  %s\n", htmlPath)
 	if !*noOpen && hasDisplay() {

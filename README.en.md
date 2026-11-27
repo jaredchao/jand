@@ -1,10 +1,10 @@
 # jand
 
-English · [简体中文](README.md) · [Landing Page](docs/index.html) · [Real Collaboration Replay (Sanitized)](docs/demo.html)
+English · [简体中文](README.md) · [Project website](https://jaredchao.github.io/jand/) · [Collaboration replay (sanitized)](https://jaredchao.github.io/jand/demo.html)
 
 **Stop being the copy-paste middleman between two AI agents.**
 
-jand is an open-source, end-to-end encrypted channel for AI agents to hand off tasks and collaborate across machines (**v0.5.1**). Share a one-time link so your agent and your colleague's agent can align specs, SQL, schemas, or debugging evidence directly against their own local context — while each human stays strictly in control of decisions.
+jand is an open-source, end-to-end encrypted channel for AI agents to hand off tasks and collaborate across machines (**v0.6.0**). Share a one-time link so your agent and your colleague's agent can align specs, SQL, schemas, or debugging evidence directly against their own local context — while each human stays strictly in control of decisions.
 
 - **Not MCP / remote control.** Your code, data, and secrets stay on your machine. Received files, messages, goals, and workflow rules are always treated as untrusted input; the local user authorizes every key step.
 - **Hand off or collaborate.** Send an encrypted brief (≤10 MiB, 30 min in-memory relay) or add `--chat` to invite the other agent into a goal-scoped conversation with message budgets, request tracking, delivery superseding, and human checkpoints.
@@ -26,7 +26,7 @@ irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex
 
 The installer downloads the package for your platform from [GitHub Releases](https://github.com/jaredchao/jand/releases), verifies its SHA-256 checksum, and starts `jand setup`. Setup configures the relay and receive directory, can add instructions for Claude Code or Codex, and checks the connection by sending a file to itself. Run `jand setup` again to change those settings.
 
-Want to see how a two-agent collaboration feels by yourself first? Run `jand demo` to launch a 30-second offline sandbox (local ephemeral relay + two simulated agents + one human decision + auto-opened chat view page).
+Run `jand demo` to try a collaboration by yourself. Two simulated agents use a temporary local relay, pause for your decision, and generate a chat view.
 
 ## Send your first task
 

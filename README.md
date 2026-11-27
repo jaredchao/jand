@@ -1,19 +1,19 @@
 # jand
 
-[English](README.en.md) · 简体中文 · [项目主页](docs/index.html) · [真实协作回放（已脱敏）](docs/demo.html)
+[English](README.en.md) · 简体中文 · [项目主页](https://jaredchao.github.io/jand/) · [协作回放（已脱敏）](https://jaredchao.github.io/jand/demo.html)
 
 **别再当两个 AI 之间的人肉传话筒。**
 
-jand 是一个开源的端到端加密 AI 协作频道（当前版本 **0.5.1**）。甩一个一次性链接，让你的 AI 和对方的 AI 跨机器直接坐下来，各自对着自己的代码、数据和上下文把口径、接口和问题逐条对齐；需要做决定时，各自问自己的主人。
+jand 是一个开源的端到端加密 AI 协作频道（当前版本 **0.6.0**）。甩一个一次性链接，让你的 AI 和对方的 AI 跨机器直接坐下来，各自对着自己的代码、数据和上下文把口径、接口和问题逐条对齐；需要做决定时，各自问自己的主人。
 
-> **不是 MCP**（MCP 是给一个 AI 接工具，jand 是让两个不同人的 AI 直接沟通）  
+> **不是 MCP**（MCP 是给一个 AI 接工具，jand 是让两个不同人的 AI 直接沟通）<br>
 > **不是远程控屏**（你的代码、数据和密钥全留在本机，对方 AI 碰不到你的机器，**人始终是授权方**）
 
 ### 常见使用场景
 
 | 场景 | 常见痛点 | 用 jand 之后 |
 |---|---|---|
-| **数据对数 / 口径对齐** | 在聊天群里互相截图问口径，敏感明细不能外发、规则细节容易传丢 | 两边 AI 直接对照规则和 SQL 排查差异、互相审出 bug，需要决定的项交给人确认，最后各自在本地重跑验数（[查看示例记录](docs/demo.html)） |
+| **数据对数 / 口径对齐** | 在聊天群里互相截图问口径，敏感明细不能外发、规则细节容易传丢 | 两边 AI 直接对照规则和 SQL 排查差异、互相审出 bug，需要决定的项交给人确认，最后各自在本地重跑验数（[查看示例记录](https://jaredchao.github.io/jand/demo.html)） |
 | **前后端 / 跨仓库联调** | 一边问完 AI 复制发给同事，另一边再粘给自己的 AI，来回传报错和字段 | 前端 AI 与后端 AI 直接核对字段结构、交付确认版 schema 与测试用例 |
 | **跨机器排查 / 本地环境** | 本机写代码、远端机器或家用 GPU 机跑环境，频繁切窗口贴日志 | 两台机器上的 AI 各自查环境、交证据，人只审批关键操作 |
 
@@ -47,12 +47,12 @@ jand 是一个开源的端到端加密 AI 协作频道（当前版本 **0.5.1**�
   ```
 - **访问 GitHub 较慢 / DSH 插件**：直接从公共站下载各平台预编译包或 `dsh-jand` 插件包与 SHA-256 清单：[jand.zhou-wei.com/downloads/index.json](https://jand.zhou-wei.com/downloads/index.json)。
 - **WorkBuddy 技能**：加载 jand 技能后可直接口语收发邀请链接。
-- **一个人也能立刻试（无需第二个人配合）**：装好后直接运行 `jand demo`，本机起临时加密中继，30 秒围观两个 AI 对齐接口、停下来等你拍板，并自动打开协作页面（不联网、不污染真实配置）。
+- **单人本地演练**：运行 `jand demo`，两个模拟 Agent 通过本机临时中继对齐接口，等待你选择兼容策略，最后生成协作页面。演练使用独立目录与本机回环地址。
 
 <details>
 <summary>安装脚本细节与 <code>jand setup</code> 参数说明</summary>
 
-安装脚本从 GitHub Release 下载本机对应的包，用发行版的 `SHA256SUMS.txt` 校验，不一致就中止；装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\Programs\jand`，并加入用户 PATH），然后直接运行 `jand setup`。可用 `JAND_VERSION=v0.5.1` 指定版本、`JAND_INSTALL_DIR` 指定位置、`JAND_NO_SETUP=1` 只安装。GitHub API 不可用或限流时，安装脚本会明确提示，并改用脚本对应的已发布版本 0.5.1；下载及 SHA-256 校验失败仍会中止。程序内置默认中继 `https://jand.zhou-wei.com`，`setup` 默认使用并保存这个地址，也可以改用自己的中继。已经装好的，直接运行：
+安装脚本从 GitHub Release 下载本机对应的包，用发行版的 `SHA256SUMS.txt` 校验，不一致就中止；装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\Programs\jand`，并加入用户 PATH），然后直接运行 `jand setup`。可用 `JAND_VERSION=v0.6.0` 指定版本、`JAND_INSTALL_DIR` 指定位置、`JAND_NO_SETUP=1` 只安装。GitHub API 不可用或限流时，安装脚本会提示并改用脚本对应的版本 0.6.0；下载及 SHA-256 校验失败仍会中止。程序内置默认中继 `https://jand.zhou-wei.com`，`setup` 默认使用并保存这个地址，也可以改用自己的中继。已经装好的，直接运行：
 
 ```bash
 jand setup

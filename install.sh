@@ -8,13 +8,13 @@
 # runs "jand setup" when there is a terminal to answer its questions.
 #
 # Environment:
-#   JAND_VERSION      a release tag such as v0.4.3 (default: the newest release)
+#   JAND_VERSION      a release tag such as v0.6.0 (default: the newest release)
 #   JAND_INSTALL_DIR  where to put jand (default: $HOME/.local/bin)
 #   JAND_NO_SETUP=1   install only; do not run jand setup
 set -eu
 
 REPO="jaredchao/jand"
-FALLBACK_VERSION="v0.5.1"
+FALLBACK_VERSION="v0.6.0"
 DIR="${JAND_INSTALL_DIR:-${HOME}/.local/bin}"
 
 say() { printf '%s\n' "$*"; }

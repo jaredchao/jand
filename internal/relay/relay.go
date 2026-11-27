@@ -232,7 +232,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		// code after # never reaches the server; inline JS only reads
 		// window.location.href locally to help the user copy a prompt.
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-"+base64.StdEncoding.EncodeToString(linkPageScriptHash[:])+"'")
 		io.WriteString(w, linkPage)
 		return
 	}
@@ -444,6 +444,8 @@ func stringLength(n int) string {
 	return strconv.Itoa(n)
 }
 
+var linkPageScriptHash = sha256.Sum256([]byte(linkPageScript))
+
 const linkPage = `<!doctype html>
 <html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>jand 接收链接 · 让两边的 AI 直接对齐</title>
@@ -496,7 +498,7 @@ h1{font-size:clamp(22px,4vw,28px);line-height:1.2;letter-spacing:-.03em;margin:0
 .tabs{display:inline-flex;flex-wrap:wrap;gap:4px;padding:4px;border-radius:11px;background:var(--subtle);border:1px solid var(--line);margin-bottom:14px}
 .tab{
   appearance:none;border:none;background:transparent;color:var(--muted);
-  padding:7px 13px;border-radius:8px;font:600 12.5px/1.2 inherit;cursor:pointer;transition:.15s;
+  padding:7px 13px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:600;line-height:1.2;cursor:pointer;transition:.15s;
 }
 .tab:hover{color:var(--ink)}
 .tab.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.1)}
@@ -508,15 +510,17 @@ h1{font-size:clamp(22px,4vw,28px);line-height:1.2;letter-spacing:-.03em;margin:0
 .actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .btn{
   appearance:none;border:1px solid transparent;border-radius:10px;padding:11px 20px;
-  font:650 14px/1.2 inherit;cursor:pointer;transition:transform .12s,opacity .15s,border-color .15s;
+  font-family:inherit;font-size:14px;font-weight:650;line-height:1.2;cursor:pointer;transition:transform .12s,opacity .15s,border-color .15s;
   display:inline-flex;align-items:center;gap:8px;
 }
 .btn:active{transform:scale(.98)}
 .btn-primary{background:linear-gradient(180deg,var(--accent-bright),var(--accent));color:#fff;box-shadow:0 8px 20px -6px rgba(13,148,136,.4)}
 @media (prefers-color-scheme:dark){.btn-primary{color:#042f2e;font-weight:750}}
-.btn-primary.copied{background:#16a34a;color:#fff;box-shadow:none}
 .btn-secondary{background:var(--surface);color:var(--ink);border-color:var(--line-strong)}
 .btn-secondary:hover,.btn-primary:hover{opacity:.93}
+.btn:disabled{opacity:.5;cursor:default}
+.copy-status{margin:8px 0 0;color:var(--muted);font-size:13px}
+.copy-status:empty{display:none}
 .trust{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
 .trust-item{background:var(--subtle);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .trust-item b{display:block;font-size:13px;margin-bottom:3px;color:var(--ink)}
@@ -556,18 +560,19 @@ footer a:hover{color:var(--ink)}
   <p class="lead">有人通过 jand 给你发来了一个任务交接或协作邀请。点击下方按钮复制指令，直接粘贴给你的 AI Agent 即可。</p>
   <div id="no-code" class="notice">提示：当前地址栏没有检测到 # 后面的接收码，请确认你打开的是对方发来的完整链接。</div>
 
-  <div class="tabs" role="tablist" aria-label="选择你的 AI 工具">
-    <button class="tab active" type="button" data-mode="general">Claude Code / Codex / 通用 AI</button>
-    <button class="tab" type="button" data-mode="workbuddy">WorkBuddy 技能</button>
-    <button class="tab" type="button" data-mode="dsh">DSH 插件</button>
+  <div class="tabs" role="group" aria-label="选择你的 AI 工具">
+    <button class="tab active" type="button" aria-pressed="true" data-mode="general">Claude Code / Codex / 通用 AI</button>
+    <button class="tab" type="button" aria-pressed="false" data-mode="workbuddy">WorkBuddy 技能</button>
+    <button class="tab" type="button" aria-pressed="false" data-mode="dsh">DSH 插件</button>
   </div>
 
-  <div id="prompt-box" class="prompt-box"></div>
+  <div id="prompt-box" class="prompt-box">把地址栏里的完整链接发给你的 AI，说「用 jand 收一下，先告诉我内容与目标，等我确认后再继续」。</div>
 
   <div class="actions">
-    <button id="copy-prompt" class="btn btn-primary" type="button">一键复制，粘贴给你的 AI</button>
-    <button id="copy-link" class="btn btn-secondary" type="button">仅复制完整链接</button>
+    <button id="copy-prompt" class="btn btn-primary" type="button" disabled>一键复制，粘贴给你的 AI</button>
+    <button id="copy-link" class="btn btn-secondary" type="button" disabled>仅复制完整链接</button>
   </div>
+  <p id="copy-status" class="copy-status" role="status"></p>
 
   <div class="trust">
     <div class="trust-item"><b>不会自动干活</b><span>你的 AI 只会先解包读给你听，你明确同意前什么都不会改。</span></div>
@@ -595,7 +600,11 @@ footer a:hover{color:var(--ink)}
   <span><a href="https://github.com/jaredchao/jand" target="_blank" rel="noopener">GitHub 开源项目</a></span>
 </footer>
 </main>
-<script>
+<script>` + linkPageScript + `</script>
+</body></html>
+`
+
+const linkPageScript = `
 (function(){
   var href = window.location.href;
   var hasCode = window.location.hash && window.location.hash.length > 1;
@@ -612,51 +621,56 @@ footer a:hover{color:var(--ink)}
   var box = document.getElementById('prompt-box');
   var copyPromptBtn = document.getElementById('copy-prompt');
   var copyLinkBtn = document.getElementById('copy-link');
+  var status = document.getElementById('copy-status');
+  copyPromptBtn.disabled = copyLinkBtn.disabled = !hasCode;
 
   function render() {
     box.textContent = templates[mode];
   }
-  function copyText(text, btn, doneLabel) {
-    var orig = btn.dataset.orig || btn.textContent;
-    btn.dataset.orig = orig;
-    function mark() {
-      btn.textContent = doneLabel;
-      btn.classList.add('copied');
-      setTimeout(function(){ btn.textContent = orig; btn.classList.remove('copied'); }, 2400);
-    }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(mark, function(){ fallback(text, mark); });
-    } else {
-      fallback(text, mark);
+  async function copyText(text, btn, doneLabel, failureLabel) {
+    status.textContent = '';
+    try {
+      await navigator.clipboard.writeText(text);
+      status.textContent = doneLabel;
+    } catch (error) {
+      status.textContent = fallback(text, btn) ? doneLabel : failureLabel;
     }
   }
-  function fallback(text, done) {
+  function fallback(text, btn) {
     var ta = document.createElement('textarea');
     ta.value = text;
     ta.style.position = 'fixed';
     ta.style.opacity = '0';
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand('copy'); done(); } catch (e) {}
-    document.body.removeChild(ta);
+    try {
+      return document.execCommand('copy');
+    } catch (error) {
+      return false;
+    } finally {
+      ta.remove();
+      btn.focus();
+    }
   }
   var tabs = document.querySelectorAll('.tab');
   for (var i = 0; i < tabs.length; i++) {
     tabs[i].addEventListener('click', function(){
-      for (var j = 0; j < tabs.length; j++) tabs[j].classList.remove('active');
-      this.classList.add('active');
+      for (var j = 0; j < tabs.length; j++) {
+        var active = tabs[j] === this;
+        tabs[j].classList.toggle('active', active);
+        tabs[j].setAttribute('aria-pressed', String(active));
+      }
       mode = this.getAttribute('data-mode');
+      status.textContent = '';
       render();
     });
   }
   copyPromptBtn.addEventListener('click', function(){
-    copyText(templates[mode], copyPromptBtn, '✓ 已复制，直接粘贴给你的 AI');
+    copyText(templates[mode], copyPromptBtn, '已复制指令，可以粘贴给你的 AI。', '复制失败，请手动选中并复制上方指令。');
   });
   copyLinkBtn.addEventListener('click', function(){
-    copyText(linkText, copyLinkBtn, '✓ 链接已复制');
+    copyText(linkText, copyLinkBtn, '已复制完整链接。', '复制失败，请手动复制地址栏中的完整链接。');
   });
   render();
 })();
-</script>
-</body></html>
 `
