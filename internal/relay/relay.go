@@ -229,9 +229,10 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	if (req.URL.Path == "/r" || req.URL.Path == "/r/") && (req.Method == http.MethodGet || req.Method == http.MethodHead) {
 		// Where a share link lands when someone opens it in a browser. The
-		// code after # never reaches the server, so this page cannot show it.
+		// code after # never reaches the server; inline JS only reads
+		// window.location.href locally to help the user copy a prompt.
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'")
 		io.WriteString(w, linkPage)
 		return
 	}
@@ -444,20 +445,218 @@ func stringLength(n int) string {
 }
 
 const linkPage = `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>jand 接收链接</title>
+<html lang="zh-Hans"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jand 接收链接 · 让两边的 AI 直接对齐</title>
 <style>
-body{margin:0;font:16px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Noto Sans CJK SC",sans-serif;background:#f5f6f8;color:#1d2330}
-main{max-width:640px;margin:0 auto;padding:32px 16px}
-.card{background:#fff;border:1px solid #e2e5eb;border-radius:10px;padding:16px 20px;margin:16px 0}
-code{background:#eef0f3;border-radius:4px;padding:1px 5px;font-size:14px;word-break:break-all}
-@media (prefers-color-scheme:dark){body{background:#14171c;color:#e6e8ec}.card{background:#1c2027;border-color:#2c323c}code{background:#232831}}
+:root{
+  --bg:#fafafa;--surface:#ffffff;--subtle:#f4f4f5;--ink:#09090b;--muted:#63636e;
+  --line:rgba(9,9,11,.09);--line-strong:rgba(9,9,11,.16);
+  --accent:#0d9488;--accent-bright:#14b8a6;--accent-ink:#0f766e;--accent-soft:rgba(13,148,136,.09);
+  --amber:#c2410c;--amber-soft:rgba(234,88,12,.09);--code-bg:#f4f4f5;
+  --grid:rgba(9,9,11,.045);--inner:inset 0 1px 0 rgba(255,255,255,.85);
+  --shadow:0 24px 60px -12px rgba(9,9,11,.09),0 4px 14px -2px rgba(9,9,11,.04);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#09090b;--surface:#111114;--subtle:#18181b;--ink:#fafafa;--muted:#9898a6;
+  --line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.17);
+  --accent:#2dd4bf;--accent-bright:#5eead4;--accent-ink:#5eead4;--accent-soft:rgba(45,212,191,.11);
+  --amber:#fb923c;--amber-soft:rgba(251,146,60,.12);--code-bg:#16161a;
+  --grid:rgba(255,255,255,.045);--inner:inset 0 1px 0 rgba(255,255,255,.06);
+  --shadow:0 28px 70px -12px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.05);
+}}
+*{box-sizing:border-box}
+body{
+  margin:0;min-height:100vh;color:var(--ink);background:var(--bg);
+  font:15px/1.68 -apple-system,BlinkMacSystemFont,"Inter","PingFang SC","Hiragino Sans GB","Segoe UI","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background-image:linear-gradient(to right,var(--grid) 1px,transparent 1px),linear-gradient(to bottom,var(--grid) 1px,transparent 1px);
+  background-size:44px 44px;
+  -webkit-mask-image:radial-gradient(ellipse 80% 55% at 50% 0%,#000 35%,transparent 100%);
+  mask-image:radial-gradient(ellipse 80% 55% at 50% 0%,#000 35%,transparent 100%);
+}
+main{max-width:700px;margin:0 auto;padding:40px 18px 56px}
+.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.brand{display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink);font-weight:800;font-size:18px;letter-spacing:-.02em}
+.logo{width:26px;height:26px}
+.logo path{fill:none;stroke-width:13;stroke-linecap:square}
+.logo-ink{stroke:var(--ink)}.logo-accent{stroke:var(--accent)}
+.badge{
+  display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;
+  color:var(--accent-ink);background:var(--surface);border:1px solid var(--line-strong);
+  padding:5px 12px;border-radius:999px;
+}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.hero{background:var(--surface);border:1px solid var(--line-strong);border-radius:20px;padding:28px;box-shadow:var(--shadow),var(--inner)}
+h1{font-size:clamp(22px,4vw,28px);line-height:1.2;letter-spacing:-.03em;margin:0 0 8px}
+.lead{margin:0 0 20px;color:var(--muted);font-size:14.5px}
+.notice{display:none;background:var(--amber-soft);color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 25%,transparent);border-radius:10px;padding:10px 14px;font-size:13px;font-weight:600;margin-bottom:16px}
+.tabs{display:inline-flex;flex-wrap:wrap;gap:4px;padding:4px;border-radius:11px;background:var(--subtle);border:1px solid var(--line);margin-bottom:14px}
+.tab{
+  appearance:none;border:none;background:transparent;color:var(--muted);
+  padding:7px 13px;border-radius:8px;font:600 12.5px/1.2 inherit;cursor:pointer;transition:.15s;
+}
+.tab:hover{color:var(--ink)}
+.tab.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.prompt-box{
+  background:var(--code-bg);border:1px solid var(--line-strong);border-radius:12px;
+  padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:13px;line-height:1.68;word-break:break-all;margin-bottom:16px;white-space:pre-wrap;
+}
+.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.btn{
+  appearance:none;border:1px solid transparent;border-radius:10px;padding:11px 20px;
+  font:650 14px/1.2 inherit;cursor:pointer;transition:transform .12s,opacity .15s,border-color .15s;
+  display:inline-flex;align-items:center;gap:8px;
+}
+.btn:active{transform:scale(.98)}
+.btn-primary{background:linear-gradient(180deg,var(--accent-bright),var(--accent));color:#fff;box-shadow:0 8px 20px -6px rgba(13,148,136,.4)}
+@media (prefers-color-scheme:dark){.btn-primary{color:#042f2e;font-weight:750}}
+.btn-primary.copied{background:#16a34a;color:#fff;box-shadow:none}
+.btn-secondary{background:var(--surface);color:var(--ink);border-color:var(--line-strong)}
+.btn-secondary:hover,.btn-primary:hover{opacity:.93}
+.trust{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
+.trust-item{background:var(--subtle);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.trust-item b{display:block;font-size:13px;margin-bottom:3px;color:var(--ink)}
+.trust-item span{display:block;font-size:12px;color:var(--muted);line-height:1.5}
+.more{margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:15px 20px}
+details summary{cursor:pointer;font-weight:650;font-size:14px;color:var(--ink);list-style:none;display:flex;align-items:center;justify-content:space-between}
+details summary::-webkit-details-marker{display:none}
+details summary::after{content:"展开 ▾";font-size:12px;font-weight:600;color:var(--muted)}
+details[open] summary::after{content:"收起 ▴"}
+.more-body{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);font-size:13.5px;color:var(--muted)}
+.more-body p{margin:0 0 10px}
+pre{margin:0 0 12px;background:var(--code-bg);border:1px solid var(--line);border-radius:10px;padding:11px 13px;overflow-x:auto;color:var(--ink)}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+.more-body a{color:var(--accent-ink);font-weight:600}
+footer{margin-top:22px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:12.5px;color:var(--muted)}
+footer a{color:var(--muted);text-decoration:none}
+footer a:hover{color:var(--ink)}
+@media (max-width:600px){
+  main{padding:22px 14px 40px}
+  .hero{padding:20px}
+  .trust{grid-template-columns:1fr}
+  .btn{width:100%;justify-content:center}
+  .tabs{display:flex;width:100%}
+  .tab{flex:1;text-align:center}
+}
 </style></head><body><main>
-<h1>这是一个 jand 接收链接</h1>
-<p>有人通过 jand 给你发来了一个任务交接。内容是端到端加密的，这个页面看不到，也不会记录链接里 # 后面的部分。</p>
-<div class="card"><b>已经装了 jand</b><br>把浏览器地址栏里的<b>完整链接</b>发给你的 AI Agent，说「用 jand 收一下」。它会先把内容讲给你听，你同意了才动手。</div>
-<div class="card"><b>还没装</b><br>对你的 Agent 说：「帮我安装 jand，然后用它收下这个链接」，再把完整链接发给它。<br>
-自己装：macOS / Linux 运行 <code>curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | sh</code>，Windows 运行 <code>irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex</code>。</div>
-<p>链接只能用一次，并且有有效期（默认 30 分钟）。过期了请让对方重新发。</p>
-</main></body></html>
+<header class="top">
+  <a class="brand" href="https://github.com/jaredchao/jand" target="_blank" rel="noopener">
+    <svg class="logo" viewBox="0 0 160 160" aria-hidden="true"><path d="M56 28H39C30 28 23 35 23 44V116C23 125 30 132 39 132H56M104 28H121C130 28 137 35 137 44V116C137 125 130 132 121 132H104" class="logo-ink"/><path d="M60 80H93M84 62L103 80L84 98" class="logo-accent"/></svg>
+    <span>jand</span>
+  </a>
+  <span class="badge">端到端加密 · 一次有效</span>
+</header>
+
+<section class="hero">
+  <h1>收到一份 AI 协作邀请</h1>
+  <p class="lead">有人通过 jand 给你发来了一个任务交接或协作邀请。点击下方按钮复制指令，直接粘贴给你的 AI Agent 即可。</p>
+  <div id="no-code" class="notice">提示：当前地址栏没有检测到 # 后面的接收码，请确认你打开的是对方发来的完整链接。</div>
+
+  <div class="tabs" role="tablist" aria-label="选择你的 AI 工具">
+    <button class="tab active" type="button" data-mode="general">Claude Code / Codex / 通用 AI</button>
+    <button class="tab" type="button" data-mode="workbuddy">WorkBuddy 技能</button>
+    <button class="tab" type="button" data-mode="dsh">DSH 插件</button>
+  </div>
+
+  <div id="prompt-box" class="prompt-box"></div>
+
+  <div class="actions">
+    <button id="copy-prompt" class="btn btn-primary" type="button">一键复制，粘贴给你的 AI</button>
+    <button id="copy-link" class="btn btn-secondary" type="button">仅复制完整链接</button>
+  </div>
+
+  <div class="trust">
+    <div class="trust-item"><b>不会自动干活</b><span>你的 AI 只会先解包读给你听，你明确同意前什么都不会改。</span></div>
+    <div class="trust-item"><b>本机隐私不出门</b><span>内容端到端加密，中继与本页都看不到，# 后的接收码不会发往服务器。</span></div>
+    <div class="trust-item"><b>链接一次有效</b><span>默认有效期内仅可领取一次，不满意随时拒绝或关闭。</span></div>
+  </div>
+</section>
+
+<section class="more">
+  <details>
+    <summary>还没装 jand？手动安装与国内直链下载</summary>
+    <div class="more-body">
+      <p>大多数情况下直接把上面的指令发给你的 AI，它会自动帮你安装。也可以自己装：</p>
+      <p><strong>macOS / Linux</strong></p>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | sh</code></pre>
+      <p><strong>Windows（PowerShell）</strong></p>
+      <pre><code>irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex</code></pre>
+      <p>访问 GitHub 较慢时，可直接从本站下载各平台预编译包或 <code>dsh-jand</code> 插件清单：<a href="https://jand.zhou-wei.com/downloads/index.json" target="_blank" rel="noopener">downloads/index.json</a>。</p>
+    </div>
+  </details>
+</section>
+
+<footer>
+  <span>jand 接收链接 · 人始终是授权方</span>
+  <span><a href="https://github.com/jaredchao/jand" target="_blank" rel="noopener">GitHub 开源项目</a></span>
+</footer>
+</main>
+<script>
+(function(){
+  var href = window.location.href;
+  var hasCode = window.location.hash && window.location.hash.length > 1;
+  var linkText = hasCode ? href : '<请替换为对方发来的完整 jand 接收链接>';
+  if (!hasCode) {
+    document.getElementById('no-code').style.display = 'block';
+  }
+  var templates = {
+    general: '请帮我用 jand 接收这个协作邀请（如果本机还没装 jand，先帮我安装；解包后先给我看内容和目标，我同意后再决定是否加入）：\n' + linkText,
+    workbuddy: '用 jand 技能帮我接收这个链接，先告诉我对方发了什么、目标是什么，等我确认后再决定要不要加入：\n' + linkText,
+    dsh: '用 dsh-jand 插件接收这个协作链接，先把摘要和目标展示给我确认：\n' + linkText
+  };
+  var mode = 'general';
+  var box = document.getElementById('prompt-box');
+  var copyPromptBtn = document.getElementById('copy-prompt');
+  var copyLinkBtn = document.getElementById('copy-link');
+
+  function render() {
+    box.textContent = templates[mode];
+  }
+  function copyText(text, btn, doneLabel) {
+    var orig = btn.dataset.orig || btn.textContent;
+    btn.dataset.orig = orig;
+    function mark() {
+      btn.textContent = doneLabel;
+      btn.classList.add('copied');
+      setTimeout(function(){ btn.textContent = orig; btn.classList.remove('copied'); }, 2400);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(mark, function(){ fallback(text, mark); });
+    } else {
+      fallback(text, mark);
+    }
+  }
+  function fallback(text, done) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  var tabs = document.querySelectorAll('.tab');
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener('click', function(){
+      for (var j = 0; j < tabs.length; j++) tabs[j].classList.remove('active');
+      this.classList.add('active');
+      mode = this.getAttribute('data-mode');
+      render();
+    });
+  }
+  copyPromptBtn.addEventListener('click', function(){
+    copyText(templates[mode], copyPromptBtn, '✓ 已复制，直接粘贴给你的 AI');
+  });
+  copyLinkBtn.addEventListener('click', function(){
+    copyText(linkText, copyLinkBtn, '✓ 链接已复制');
+  });
+  render();
+})();
+</script>
+</body></html>
 `

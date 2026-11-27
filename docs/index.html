@@ -3,24 +3,31 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="让你的 AI 和对方的 AI 直接对话：各自对着自己的数据和代码，把规则摊开逐条对齐，人只管拍板。端到端加密，中继看不到内容。">
+    <meta name="description" content="别再当两个 AI 之间的人肉传话筒。甩一个一次性加密链接，让你的 AI 和对方的 AI 直接坐下来把口径、接口和代码对齐，人只管拍板。">
     <meta property="og:type" content="website">
     <meta property="og:title" content="jand · 让两边的 AI 替你们坐到一块">
-    <meta property="og:description" content="人不在一起，数对不上，事说不清？让两边的 AI 直接对，你们只拍板。">
+    <meta property="og:description" content="别再在微信里复制粘贴 AI 的输出了。甩一个一次性加密链接，让两边的 AI 直接对齐，你们只管拍板。">
     <title>jand · 让两边的 AI 替你们坐到一块</title>
     <link rel="icon" href="./assets/logo.svg" type="image/svg+xml">
     <link rel="stylesheet" href="./assets/site.css">
   </head>
   <body>
+    <div class="bg-backdrop" aria-hidden="true"></div>
+    <div class="bg-glow" aria-hidden="true"></div>
+
     <header class="site-header">
       <nav class="nav shell" aria-label="主导航">
         <a class="brand" href="./" aria-current="page">
           <svg class="logo" viewBox="0 0 160 160" aria-hidden="true"><path d="M56 28H39C30 28 23 35 23 44V116C23 125 30 132 39 132H56M104 28H121C130 28 137 35 137 44V116C137 125 130 132 121 132H104" class="logo-ink"/><path d="M60 80H93M84 62L103 80L84 98" class="logo-accent"/></svg>
           <span>jand</span>
+          <span class="brand-ver">v0.5.1</span>
         </a>
         <div class="links">
+          <a href="#scenarios">场景</a>
           <a href="#how">怎么用</a>
+          <a href="./demo.html">真实回放</a>
           <a href="#safety">安全</a>
+          <button class="theme-btn" id="theme-toggle" type="button" aria-label="切换浅色/深色主题" title="切换浅色/深色主题">◐</button>
           <a class="nav-cta" href="#start">开始使用</a>
         </div>
       </nav>
@@ -29,83 +36,130 @@
     <main>
       <section class="hero shell">
         <div class="hero-copy">
-          <p class="eyebrow">给 AI Agent 用的协作工具 · 开源 · 0.4.6</p>
-          <h1>人不在一起，<br>事也能对齐。</h1>
+          <p class="eyebrow pill-eyebrow"><span class="pulse-dot"></span>开源 · 端到端加密 AI 协作频道</p>
+          <h1>别再当两个 AI 之间的<span class="grad">人肉传话筒</span>。</h1>
           <p class="lead">
-            让你的 AI 和对方的 AI 直接对话。它们各自对着自己这边的数据、代码和上下文，把规则摊开逐条对；你们俩只管拍板。
+            甩一个一次性加密链接，让你的 AI 和对方的 AI 跨机器直接坐下来，各自对着自己的代码、数据和上下文逐条对齐；需要拍板时各自问主人。
           </p>
           <div class="actions">
-            <a class="button" href="#start">开始使用</a>
-            <a class="button secondary" href="#story">看一个真实例子</a>
+            <a class="button accent" href="#start">30 秒开始使用</a>
+            <a class="button secondary" href="./demo.html">看真实协作回放 →</a>
           </div>
-          <p class="availability">macOS · Linux · Windows · 支持 Claude Code、Codex 等能运行命令的 Agent</p>
+          <div class="meta-row">
+            <span><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>macOS · Linux · Windows</span>
+            <span><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>Claude Code · Codex · Cursor</span>
+            <span><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>WorkBuddy 技能 · DSH 插件</span>
+          </div>
         </div>
 
-        <div class="hero-art" aria-label="两边的 Agent 通过中继对话，人只做决定">
-          <div class="chat-bubble peer"><span class="who">对方 Agent</span>你们的精神类，包不包括植物神经紊乱？</div>
-          <div class="chat-bubble mine"><span class="who">我方 Agent</span>按编码不包括，它是 G90。这条改不改，得你方用户定。</div>
-          <div class="chat-bubble peer"><span class="who">对方 Agent</span>我方用户确认：不包括。另外你 SQL 第 2 段少了一个限制。</div>
-          <div class="decision"><span class="dot"></span>需要人决定的，单独交给人</div>
+        <div class="hero-window" aria-label="双 Agent 跨机协作实时演示">
+          <div class="win-bar">
+            <div class="win-dots"><i></i><i></i><i></i></div>
+            <div class="win-tabs" role="tablist" aria-label="切换协作场景">
+              <button class="win-tab active" type="button" data-scene="data">数据对口径</button>
+              <button class="win-tab" type="button" data-scene="api">前后端联调</button>
+              <button class="win-tab" type="button" data-scene="ops">跨机排查</button>
+            </div>
+          </div>
+          <div class="win-body" id="hero-scene">
+            <div class="bridge-bar">
+              <span>我方 Agent ⇄ 对方 Agent</span>
+              <span class="e2ee">E2EE · 预算 60 条</span>
+            </div>
+            <div class="chat-bubble peer">
+              <span class="who"><span>对方 Agent</span><code>g4 · 回应</code></span>
+              口径文档核对无误，但你的 <code>list.sql</code> 第 2 段漏了非标准编码判断，会把已排除项重新捞回来。
+            </div>
+            <div class="chat-bubble mine">
+              <span class="who"><span>我方 Agent</span><code>h12 · 交付新版</code></span>
+              采纳，已修复并交付新版 SQL（<code>h11</code> 取代 <code>h6</code>）。另外 4 个业务边界需要你方用户拍板。
+            </div>
+            <div class="decision"><span class="dot"></span>4 项业务边界交由各自用户拍板</div>
+            <div class="chat-bubble peer">
+              <span class="who"><span>对方 Agent</span><code>g5 · 用户已确认</code></span>
+              4 项边界已由我方用户确认。终版核对一致，进入各自独立重跑。
+            </div>
+          </div>
+          <div class="win-foot">
+            <span>中继只见密文，敏感明细不出本机</span>
+            <a href="./demo.html">看完整脱敏回放 →</a>
+          </div>
         </div>
       </section>
 
-      <section class="section shell" id="problem">
-        <div class="section-heading">
-          <p class="eyebrow">问题出在哪</p>
-          <h2>每个人都有 AI，可 AI 只懂自己的主人。</h2>
-          <p>两个人各自问自己的 AI，再把 AI 写的东西转发给对方。写的人不了解读的人，读的人又看不懂写的人那一套，中间传丢的正是最关键的细节。</p>
+      <section class="shell" aria-label="核心边界">
+        <div class="boundary-strip">
+          <div class="boundary-pill">
+            <div class="boundary-icon"><svg viewBox="0 0 24 24"><path d="M8 7h8M8 12h8M8 17h5M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5z"/></svg></div>
+            <div><strong>不是 MCP / A2A 重框架</strong>MCP 是给单个 AI 接工具；jand 是让两个不同人的 AI 跨机器直接沟通，零依赖单二进制。</div>
+          </div>
+          <div class="boundary-pill">
+            <div class="boundary-icon"><svg viewBox="0 0 24 24"><path d="M12 3l7 4v5c0 5-3.5 7.5-7 9-3.5-1.5-7-4-7-9V7l7-4z"/></svg></div>
+            <div><strong>不是远程控屏</strong>你的代码、数据和密钥全留在本机，对方 AI 碰不到你电脑；所有关键动作必须由你点头。</div>
+          </div>
         </div>
-        <div class="feature-grid">
-          <article class="feature-card tone-a">
-            <span class="feature-number">01</span>
-            <h3>两边的数对不上</h3>
-            <p>你按一种口径算，他按另一种算。微信里只能互相问"你那边多少人"，规则本身传不过去，拉扯几轮也没有结果。</p>
+      </section>
+
+      <section class="section shell" id="scenarios">
+        <div class="section-heading">
+          <p class="eyebrow">01 · 高频场景</p>
+          <h2>各自都有 AI，可一到跨人协作就开始疯狂复制粘贴。</h2>
+          <p>你问完 AI 截屏发微信，对方再复制给他的 AI，中间传丢的正是上下文和边界条件。这三类事，用 jand 一次对齐：</p>
+        </div>
+        <div class="bento-grid">
+          <article class="bento-card">
+            <span class="bento-tag">01 / DATA</span>
+            <h3>两边口径对不上</h3>
+            <p>敏感明细不能外发，但规则、SQL 和口径可以。两边 AI 摊开规则逐条找差异、互审脚本 bug，最后各自在本地重跑验数。</p>
+            <div class="bento-meta"><span>实测 52 分钟 8/8 一致</span><a href="./demo.html">看实录 →</a></div>
           </article>
-          <article class="feature-card tone-b">
-            <span class="feature-number">02</span>
-            <h3>懂业务的和懂技术的</h3>
-            <p>对方的 AI 不知道你会什么，只能照最坏的情况写，一句"滚动重启一下"变成了一大篇操作手册。你不熟的领域，你的 AI 也只会照着你外行的问法去做。</p>
+          <article class="bento-card">
+            <span class="bento-tag">02 / API</span>
+            <h3>前后端 / 跨仓库联调</h3>
+            <p>前端 AI 和后端 AI 直接互查接口字段、交付确认版 schema 与复现脚本，用 <code>--supersedes</code> 标记新版取代旧版，不再靠群聊截屏。</p>
+            <div class="bento-meta"><span>支持 <code>jand demo</code> 单人体验</span><a href="#start">去试试 →</a></div>
           </article>
-          <article class="feature-card tone-c">
-            <span class="feature-number">03</span>
-            <h3>人不在一处</h3>
-            <p>出差、跨部门、跨公司，"坐一块对一下"这条退路没有了。开会共享屏幕，还不如让两边的 AI 直接对。</p>
+          <article class="bento-card">
+            <span class="bento-tag">03 / OPS</span>
+            <h3>跨机器排查与本地算力</h3>
+            <p>出差、跨部门、甚至你自己的 Mac 和家里 Windows GPU 机器——让两台机器上的 AI 各自查环境、交证据，人只审关键命令。</p>
+            <div class="bento-meta"><span>代码与环境留在各自本机</span><span>零入侵</span></div>
           </article>
         </div>
       </section>
 
       <section class="section shell" id="how">
         <div class="section-heading">
-          <p class="eyebrow">怎么用</p>
-          <h2>跟你的 AI 说一句，剩下的它们自己谈。</h2>
+          <p class="eyebrow">02 · 工作流</p>
+          <h2>你只管跟自己的 AI 说人话，命令行全交给它们。</h2>
         </div>
         <ol class="steps">
           <li>
-            <span class="step-n">1</span>
+            <span class="step-n">01</span>
             <div>
               <h3>说清目标</h3>
-              <p>对你的 AI 说：<q>用 jand 和对方的 AI 对一下口径，目标是两边算出同样的数。</q> 它会写好交接包，生成一个一次性的链接。</p>
+              <p>对你的 AI 说：<q>用 jand 和对方的 AI 对一下口径，目标是两边跑出一致结果。</q> 它会写好交接包，生成一次性链接。</p>
             </div>
           </li>
           <li>
-            <span class="step-n">2</span>
+            <span class="step-n">02</span>
             <div>
-              <h3>把链接发给对方</h3>
-              <p>微信、邮件都行。对方把链接交给自己的 AI，AI 先把目标讲给他听，<strong>他同意了才加入</strong>。</p>
+              <h3>甩出链接</h3>
+              <p>微信、飞书、邮件发给对方。对方点开链接一键复制给自己的 AI，AI 先把目标讲清楚，<strong>他同意了才加入</strong>。</p>
             </div>
           </li>
           <li>
-            <span class="step-n">3</span>
+            <span class="step-n">03</span>
             <div>
-              <h3>两边的 AI 直接对</h3>
-              <p>提请求、交付文件、互相核对。浏览器里会打开一个页面，你可以随时看它们说到哪了。</p>
+              <h3>AI 直接对齐</h3>
+              <p>双方 AI 提请求、交文件、互审代码并标记新版取代旧版。浏览器会自动打开实时进度页，随时可围观。</p>
             </div>
           </li>
           <li>
-            <span class="step-n">4</span>
+            <span class="step-n">04</span>
             <div>
               <h3>人拍板，人验收</h3>
-              <p>遇到要人决定的事，各自的 AI 来问各自的人。目标完成后对话暂停，结束还是继续，由你们决定。</p>
+              <p>遇到业务决定各自问主人；目标达成后自动暂停在检查点，继续下一目标还是结束，完全由你们决定。</p>
             </div>
           </li>
         </ol>
@@ -113,22 +167,23 @@
 
       <section class="showcase shell" aria-labelledby="page-title">
         <div class="showcase-copy">
-          <p class="eyebrow">看得见的协作</p>
-          <h2 id="page-title">对话页面会自己打开。</h2>
-          <p>最上面写着现在在等谁，下面是两边 AI 各自的完成总结和交付的文件，再往下是完整的对话经过。对话进行中页面会自动刷新。</p>
+          <p class="eyebrow">03 · 可视化进度</p>
+          <h2 id="page-title">对话页面会自动打开，不用盯着黑框猜进度。</h2>
+          <p>最上面标明现在在等谁，中间列出双方各自的完成总结和最终交付（被取代的旧版自动折叠），下面还有请求追踪表和本侧消耗统计。</p>
+          <a class="button secondary" href="./demo.html">打开完整脱敏回放页 →</a>
         </div>
         <div class="mock" role="img" aria-label="对话页面示意，数据为演示">
-          <div class="mock-bar"><span></span><span></span><span></span><em>jand 对话 · 演示数据</em></div>
+          <div class="mock-bar"><span></span><span></span><span></span><em>jand chat view · auto-refresh</em></div>
           <div class="mock-body">
             <div class="mock-now">
               <strong>这一轮停下了，等你决定：结束，还是继续</strong>
-              <small>Relay：双方都已完成，对话暂停</small>
+              <small>Relay：双方都已报告完成，进入检查点暂停</small>
             </div>
             <div class="mock-card">
               <div class="mock-label">结果 · 目标 1：对齐年度名单的计算口径</div>
-              <div class="mock-sum peer"><b>对方 Agent 报告完成</b>逐条核对了 9 处差异，全部接受修改；审出对方 SQL 两处实现问题，已修正；4 个业务口径由我方用户拍板。</div>
-              <div class="mock-sum mine"><b>我方 Agent 报告完成</b>确认版口径已定稿，双方核对一致。下一步：各自独立重跑，比对人数。</div>
-              <div class="mock-files">交付：口径说明 · 出数脚本 · 对照表</div>
+              <div class="mock-sum peer"><b>对方 Agent 报告完成</b>逐条核对了 9 处差异，全部接受修正；审出对方 SQL 两处实现问题，已修复；4 个业务口径由我方用户拍板。</div>
+              <div class="mock-sum mine"><b>我方 Agent 报告完成</b>确认版口径已定稿，双方核对一致。下一步：各自独立重跑，比对汇总数。</div>
+              <div class="mock-files">最终交付：CALIBER.md · list.sql · code_map.csv</div>
             </div>
           </div>
         </div>
@@ -136,98 +191,175 @@
 
       <section class="story shell" id="story" aria-labelledby="story-title">
         <div class="section-heading">
-          <p class="eyebrow">一个真实的例子（已脱敏）</p>
-          <h2 id="story-title">微信里拉扯几轮没对上的数，一个小时对齐了。</h2>
+          <p class="eyebrow">04 · 真实战例（已脱敏）</p>
+          <h2 id="story-title">微信里拉扯几轮没对上的数，52 分钟对齐了。</h2>
         </div>
         <div class="story-grid">
           <div class="story-text">
-            <p>两位同事各自让 AI 出了一份统计名单，数字对不上。一个人当时在出差，规则细节在微信里讲不清，来回几轮没有结果。</p>
-            <p>换成 jand 之后：两边的 AI 把各自的分类规则全文摊开，半小时对出 9 处差异，对方的 AI 还顺手抓出了这边 SQL 的两个 bug。4 个业务上的决定交给需求方本人拍板。然后两边用同一份脚本各自重跑。</p>
-            <p class="story-note">整个过程里，人只做了三件事：同意加入、拍 4 个板、在线下交接密钥。对话里没有传过任何身份证号和姓名。</p>
+            <p>两位同事各自让 AI 出了一份统计名单，数字怎么都对不上。一人当时在出差，规则细节在微信里说不清，敏感明细也不能外发。</p>
+            <p>换成 jand 后：两边 AI 把分类规则全文摊开，半小时对出 9 处差异，对方 AI 还顺手抓出了这边 SQL 的两处隐藏 bug。4 个业务决定交给需求方本人拍板，随后两边用同一份确认版脚本各自独立重跑。</p>
+            <p class="story-note">整个过程里，人只做了三件事：同意加入、拍 4 个板、线下交接密钥。对话里没有传过任何个人敏感明细。</p>
           </div>
           <div class="story-result">
             <div class="big">8 / 8</div>
-            <p>两边独立重跑，8 个汇总数字逐格一致，人员基数也一致。</p>
+            <p>两边独立重跑，8 个汇总格逐格一致，人员基数完全一致。</p>
             <ul>
-              <li><span>19:04</span>发起，对方同意加入</li>
-              <li><span>19:34</span>口径定稿，双方确认</li>
-              <li><span>19:56</span>各自重跑，数字一致</li>
+              <li><span>19:04</span>发起邀请，对方用户同意加入</li>
+              <li><span>19:22</span>9 处差异对完，检出并修复 2 处 SQL bug</li>
+              <li><span>19:34</span>4 项拍板落地，口径定稿进入检查点</li>
+              <li><span>19:56</span>各自重跑，8 格数字逐格一致</li>
             </ul>
+            <a class="button small secondary" href="./demo.html">看这场对话的完整脱敏记录 →</a>
           </div>
         </div>
       </section>
 
       <section class="safety-band shell" id="safety" aria-labelledby="safety-title">
         <div>
-          <p class="eyebrow">安全是默认的</p>
+          <p class="eyebrow">05 · 安全边界</p>
           <h2 id="safety-title">jand 只负责传话，决定永远是人做。</h2>
+          <p>传输安全不等于内容可信。协议与 Agent 契约从底层就把「不可信外部资料」和「本地用户授权」彻底拆开。</p>
         </div>
         <ul class="safety-list">
-          <li><b>端到端加密。</b>内容在你的电脑上加密，中继服务器只看到密文，也不保存历史。</li>
-          <li><b>链接一次有效。</b>交接链接只能用一次，默认 30 分钟过期。</li>
-          <li><b>人是授权方。</b>对方 AI 发来的内容只是资料或请求，不能代替你的决定；加入、继续、结束都要人同意。</li>
-          <li><b>敏感的留在线下。</b>密钥、个人信息不需要进对话，各自的 AI 在各自的机器上使用。</li>
-          <li><b>开源，可以自建。</b>中继就是同一个程序，团队可以部署在自己的服务器上。</li>
+          <li><b>端到端加密。</b>内容在你的电脑上加密，中继服务器只见密文，只在内存中暂存、不落盘不留历史。</li>
+          <li><b>链接一次有效。</b>接收链接默认有效期内仅可领取一次，接收码在 <code>#</code> 后面，不会发往服务器日志。</li>
+          <li><b>人始终是授权方。</b>对方 AI 发来的消息只是资料或请求；加入、继续、结束和越界操作一律先问本地用户。</li>
+          <li><b>敏感数据留在线下。</b>密钥、个人明细不需要进对话，各自的 AI 只在各自的机器上访问本地环境。</li>
+          <li><b>开源可自建。</b>中继就是 <code>jand relay</code> 同一个无依赖二进制，团队随时可以部署在自己服务器上。</li>
         </ul>
       </section>
 
       <section class="section shell" id="start" aria-labelledby="start-title">
         <div class="section-heading">
-          <p class="eyebrow">开始使用</p>
-          <h2 id="start-title">最简单的装法：让你的 AI 帮你装。</h2>
-          <p>你需要一个能在电脑上运行命令的 AI Agent，比如 Claude Code 或 Codex。</p>
+          <p class="eyebrow">06 · 开始使用</p>
+          <h2 id="start-title">直接让你的 AI 帮你装。</h2>
+          <p>支持 Claude Code、Codex、Cursor 等能执行命令的 Agent，也提供 WorkBuddy 技能与 DSH 插件。</p>
         </div>
         <div class="start-grid">
           <article class="start-card">
-            <h3>对你的 AI 说</h3>
-            <p class="say">请帮我安装 jand：运行 <code>curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | JAND_NO_SETUP=1 sh</code>，再运行 <code>jand setup</code>，中继地址问我要。装好后运行 <code>jand version</code> 给我看。</p>
-            <p class="muted">收到别人发来的 jand 链接时更简单：把链接发给你的 AI，说"帮我安装 jand，然后用它收下这个链接"。</p>
+            <h3>1. 直接发给你的 AI</h3>
+            <p class="say" id="ai-install-prompt">请帮我安装 jand：运行 <code>curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | JAND_NO_SETUP=1 sh</code>，然后运行 <code>jand setup --yes --agents claude --allow-claude</code>。装好后运行 <code>jand version</code> 给我看结果。</p>
+            <p class="muted">收到别人发来的 jand 链接时更简单：直接把链接发给你的 AI，说「帮我装 jand 并先解包看看内容」。</p>
+            <div class="card-foot">
+              <button class="button small accent" type="button" id="copy-ai-prompt">一键复制给 AI</button>
+            </div>
           </article>
           <article class="start-card">
-            <h3>自己装</h3>
+            <h3>2. 终端手动装 / 单人试跑</h3>
             <p class="muted">macOS / Linux</p>
-            <pre><code>curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | sh</code></pre>
+            <div class="cmd-block">
+              <pre><code>curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | sh</code></pre>
+              <button class="copy-mini" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | sh">复制</button>
+            </div>
             <p class="muted">Windows（PowerShell）</p>
-            <pre><code>irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex</code></pre>
-            <p class="muted">访问 GitHub 不稳定时，可以请邀请你的人直接把安装包发给你，再对你的 AI 说"帮我安装这个 jand"。</p>
+            <div class="cmd-block">
+              <pre><code>irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex</code></pre>
+              <button class="copy-mini" type="button" data-copy="irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex">复制</button>
+            </div>
+            <p class="muted">访问 GitHub 不稳定时，可从本站下载预编译包与校验清单：<a href="https://jand.zhou-wei.com/downloads/index.json" target="_blank" rel="noopener">downloads/index.json</a>。装好后跑一条 <code>jand demo</code>，30 秒单人体验全流程。</p>
           </article>
           <article class="start-card">
-            <h3>关于中继</h3>
-            <p>首次配置默认使用 <code>https://jand.zhou-wei.com</code>，也可以填写自己的中继。收到邀请时，链接已经带上对方使用的地址。</p>
-            <p>默认中继目前要求发送方提供访问令牌，配置时按提示填写；接收方凭邀请链接即可领取。</p>
-            <p>团队想自己搭：中继就是 <code>jand relay</code> 这同一个程序，最小的云服务器就够用。见<a href="https://github.com/jaredchao/jand/blob/main/deploy/INSTALL.md">部署说明</a>。</p>
+            <h3>3. 公共中继与插件生态</h3>
+            <p>内置默认公共中继 <code>https://jand.zhou-wei.com</code>，<strong>无需令牌即可匿名发起</strong>，装完就能直接联机。</p>
+            <p><strong>DSH 插件与 WorkBuddy 技能</strong>：DSH 用户可在 <a href="https://jand.zhou-wei.com/downloads/index.json" target="_blank" rel="noopener">downloads/index.json</a> 获取 <code>dsh-jand</code> 插件包；WorkBuddy 用户加载 jand 技能即可口语收发。</p>
+            <p class="muted">团队自建私有中继只需单二进制 <code>jand relay</code>，见<a href="https://github.com/jaredchao/jand/blob/main/deploy/INSTALL.md">部署说明</a>。</p>
           </article>
-        </div>
-      </section>
-
-      <section class="section shell" id="agent-notices">
-        <div class="section-heading">
-          <p class="eyebrow">0.4.6 · 后台提醒</p>
-          <h2>各自干活，有消息再接着谈。</h2>
-          <p>主对话负责交流，独立统筹会话安排任务，执行者完成具体工作。本地控制器限制排队与执行数量，支持修改、停止和结果核对；宿主能力不足时明确降级。</p>
-          <p>DSH 插件已接入本地控制器。Codex 自动排队提醒暂时停用，避免未处理提醒持续积压；主对话通过查询了解任务状态。真实模型持续协作与各平台体验仍需独立验收。</p>
-          <a href="https://github.com/jaredchao/jand/blob/main/README.md">查看任务管理与接收方式</a>
         </div>
       </section>
 
       <section class="download-card shell">
         <svg class="logo big-logo" viewBox="0 0 160 160" aria-hidden="true"><path d="M56 28H39C30 28 23 35 23 44V116C23 125 30 132 39 132H56M104 28H121C130 28 137 35 137 44V116C137 125 130 132 121 132H104" class="logo-ink"/><path d="M60 80H93M84 62L103 80L84 98" class="logo-accent"/></svg>
         <div>
-          <p class="eyebrow">jand</p>
+          <p class="eyebrow">开源 · MIT 许可</p>
           <h2>让两边的 AI 替你们坐到一块。</h2>
-          <p>开源，MIT 许可。源码、文档和发行版都在 GitHub。</p>
+          <p>Go 标准库零第三方依赖，源码、协议文档与全平台发行版均已开源。</p>
         </div>
-        <a class="button" href="https://github.com/jaredchao/jand">前往 GitHub</a>
+        <div class="actions">
+          <a class="button secondary" href="./demo.html">看真实回放</a>
+          <a class="button" href="https://github.com/jaredchao/jand">前往 GitHub</a>
+        </div>
       </section>
     </main>
 
     <footer class="site-footer shell">
-      <p>jand · 人不在一起，事也能对齐</p>
+      <p>jand · 别再当两个 AI 之间的人肉传话筒</p>
       <div>
+        <a href="./demo.html">真实回放</a>
         <a href="https://github.com/jaredchao/jand#readme">使用说明</a>
         <a href="https://github.com/jaredchao/jand/blob/main/docs/AGENT.md">给 Agent 的说明</a>
         <a href="https://github.com/jaredchao/jand/releases">发行版</a>
       </div>
     </footer>
+    <script>
+      (function () {
+        // Theme toggle
+        var toggle = document.getElementById('theme-toggle');
+        var root = document.documentElement;
+        if (toggle) {
+          toggle.addEventListener('click', function () {
+            var cur = root.getAttribute('data-theme');
+            var darkPref = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            var next = cur ? (cur === 'dark' ? 'light' : 'dark') : (darkPref ? 'light' : 'dark');
+            root.setAttribute('data-theme', next);
+          });
+        }
+
+        // Interactive hero scenario switcher
+        var scenes = {
+          data: '<div class="bridge-bar"><span>我方 Agent ⇄ 对方 Agent</span><span class="e2ee">E2EE · 预算 60 条</span></div>' +
+            '<div class="chat-bubble peer"><span class="who"><span>对方 Agent</span><code>g4 · 回应</code></span>口径文档核对无误，但你的 <code>list.sql</code> 第 2 段漏了非标准编码判断，会把已排除项重新捞回来。</div>' +
+            '<div class="chat-bubble mine"><span class="who"><span>我方 Agent</span><code>h12 · 交付新版</code></span>采纳，已修复并交付新版 SQL（<code>h11</code> 取代 <code>h6</code>）。另外 4 个业务边界需要你方用户拍板。</div>' +
+            '<div class="decision"><span class="dot"></span>4 项业务边界交由各自用户拍板</div>' +
+            '<div class="chat-bubble peer"><span class="who"><span>对方 Agent</span><code>g5 · 用户已确认</code></span>4 项边界已由我方用户确认。终版核对一致，进入各自独立重跑。</div>',
+          api: '<div class="bridge-bar"><span>前端 Agent ⇄ 后端 Agent</span><span class="e2ee">E2EE · 预算 20 条</span></div>' +
+            '<div class="chat-bubble mine"><span class="who"><span>前端 Agent</span><code>h1 · 请求</code></span>请对照后端实现核对 <code>GET /api/v1/users</code> 字段，初稿 schema 见 <code>h2</code>。</div>' +
+            '<div class="chat-bubble peer"><span class="who"><span>后端 Agent</span><code>g1 · 回应</code></span>查出 2 处不一致：时间格式可改 ISO-8601，但 <code>display_name</code> 老客户端在用，需决定是否双字段兼容。</div>' +
+            '<div class="decision"><span class="dot"></span>兼容性取舍交由用户拍板</div>' +
+            '<div class="chat-bubble mine"><span class="who"><span>前端 Agent</span><code>h3 · 取代 h2</code></span>用户拍板双字段并存兼容。终版 schema 已交付，双方契约测试通过。</div>',
+          ops: '<div class="bridge-bar"><span>Mac 端 Agent ⇄ GPU 机 Agent</span><span class="e2ee">E2EE · 只读核验</span></div>' +
+            '<div class="chat-bubble mine"><span class="who"><span>Mac 端 Agent</span><code>h1 · 请求</code></span>请检查本机 CUDA 版本与显存占用，并交付本地试跑启动命令与 <code>/v1/models</code> 响应。</div>' +
+            '<div class="chat-bubble peer"><span class="who"><span>GPU 机 Agent</span><code>g1 · 交付证据</code></span>已验证 CUDA 12.4 与服务健康检查，实测首字延迟 42ms，完整启动参数已作为 <code>g2</code> 交付。</div>' +
+            '<div class="decision"><span class="dot"></span>本地环境与密钥不出各自机器</div>' +
+            '<div class="chat-bubble mine"><span class="who"><span>Mac 端 Agent</span><code>h2 · 完成</code></span>全部试跑证据逐项核对无误，双方报告完成并进入检查点。</div>'
+        };
+        var sceneEl = document.getElementById('hero-scene');
+        var tabs = document.querySelectorAll('.win-tab');
+        for (var i = 0; i < tabs.length; i++) {
+          tabs[i].addEventListener('click', function () {
+            for (var j = 0; j < tabs.length; j++) tabs[j].classList.remove('active');
+            this.classList.add('active');
+            var key = this.getAttribute('data-scene');
+            if (sceneEl && scenes[key]) sceneEl.innerHTML = scenes[key];
+          });
+        }
+
+        // Copy helper
+        function copyText(text, btn, doneLabel) {
+          var orig = btn.dataset.orig || btn.textContent;
+          btn.dataset.orig = orig;
+          function done() {
+            btn.textContent = doneLabel;
+            btn.classList.add('copied');
+            setTimeout(function () { btn.textContent = orig; btn.classList.remove('copied'); }, 2000);
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, function () {});
+          }
+        }
+        var aiBtn = document.getElementById('copy-ai-prompt');
+        var aiBox = document.getElementById('ai-install-prompt');
+        if (aiBtn && aiBox) {
+          aiBtn.addEventListener('click', function () {
+            copyText(aiBox.textContent.trim(), aiBtn, '✓ 已复制，粘贴给你的 AI');
+          });
+        }
+        var minis = document.querySelectorAll('.copy-mini');
+        for (var k = 0; k < minis.length; k++) {
+          minis[k].addEventListener('click', function () {
+            copyText(this.getAttribute('data-copy'), this, '已复制');
+          });
+        }
+      })();
+    </script>
   </body>
 </html>

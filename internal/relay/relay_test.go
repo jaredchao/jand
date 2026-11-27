@@ -172,7 +172,10 @@ func TestLinkLandingPage(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != 200 || !strings.Contains(string(body), "jand 接收链接") || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "default-src 'none'") {
-		t.Fatalf("%d %q", resp.StatusCode, resp.Header)
+	if resp.StatusCode != 200 || !strings.Contains(string(body), "jand 接收链接") ||
+		!strings.Contains(string(body), "一键复制") ||
+		!strings.Contains(resp.Header.Get("Content-Security-Policy"), "default-src 'none'") ||
+		!strings.Contains(resp.Header.Get("Content-Security-Policy"), "script-src 'unsafe-inline'") {
+		t.Fatalf("%d %q %v", resp.StatusCode, body, resp.Header)
 	}
 }

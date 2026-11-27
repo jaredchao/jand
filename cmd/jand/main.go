@@ -41,6 +41,7 @@ func usage(w io.Writer) {
                          (give it to your agent: "run jand help agent and follow it")
   jand help template     the structure of a handoff packet
   jand setup             first-run configuration: relay, access token, your agents, self-test
+  jand demo              run a 30-second local sandbox demo (two agents + human decision + view page)
   jand config [--json]   show the effective client configuration and its sources
   jand version           version, program path, config, and whether the relay is compatible
                          (jand --version prints only the number)
@@ -107,6 +108,9 @@ func run(ctx context.Context, args []string, out, stderr io.Writer) (code int) {
 	}
 	if args[0] == "setup" {
 		return setup(ctx, args[1:], os.Stdin, out, stderr)
+	}
+	if args[0] == "demo" {
+		return demoCommand(ctx, args[1:], os.Stdin, out, stderr)
 	}
 	sender := args[0] == "send"
 	if sender {

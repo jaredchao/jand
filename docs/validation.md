@@ -79,7 +79,7 @@
 
 ## 0.4.0：消息交叉、逐字核对与暂停收尾
 
-依据 0.3.2 与 Jared 侧 Agent 的跨机器认知对齐实测（6 分钟、15 条消息，终稿逐字一致，但暴露三个问题）修改。按商定规则，对话协议不兼容即升次版本号。
+依据 0.3.2 跨机器协作实测（6 分钟、15 条消息，终稿逐字一致，但暴露三个问题）修改。按版本约定，对话协议不兼容即升次版本号。
 
 - 消息交叉（实测 4 次，对方每次都在审阅已被替换的旧版本）：发送 reply、request、delivery 前检查对方未读的 request/reply/delivery/done/proposal，有则拒绝（退出码 5），`--anyway` 可越过；progress 和 note 不拦，以免与 `--wake` 冲突。delivery 可带 `--supersedes`，回复旧版本会被拒绝或被标记为 `stale`。
 - 逐字核对失败（两边哈希只差末尾换行）：`chat send --file` 改为按原字节发送；标准输入仍去掉末尾换行。
@@ -89,7 +89,7 @@
 
 ## 0.4.1：配置化（四层分工）
 
-按 CONFIG_DESIGN.md 实施，毛仔决定版本留在 0.4.x，因此协作流程做成与 0.4.0 兼容。
+按 CONFIG_DESIGN.md 实施，在 0.4.x 内保持与 0.4.0 兼容。
 
 - 第 0 层：安全底线不可配置（加密、座位锁、用户同意、不可信标记、Relay 强制的暂停与计数、先读再回）。
 - 第 1 层：`jand relay --config`（或 `JAND_RELAY_CONFIG`）读取 JSON 配置，覆盖全部 15 个参数；未知字段、越界值直接拒绝；`--print-config` 显示最终生效值；命令行参数优先。访问令牌只预留字段，非空即报错。
@@ -100,16 +100,16 @@
 - 实现中发现并修正：接收端在旧 Relay 上取不到章程时，曾误报「核对失败、不要加入」，改为按默认流程处理。
 - 文档整体更新时补测：用真实的 0.4.0 程序（`9d0e9ca` 构建）与 0.4.1 程序在 0.4.1 Relay 上双向对话，请求、回复（含 `reply_to`）、报告完成与 `all_done` 暂停均正常；`done_rule: any` 的对话中 0.4.0 加入被拒（409，提示需要 0.4.1）；0.4.0 接收方的 `saved` 中没有 `workflow` 字段，因此其他自定义流程下看不到流程内容。README 与 CHAT_DESIGN 的兼容性说明据此改写；0.3.x 与 0.4.x 之间的对话未测试，文档写明「未验证」。
 
-## 0.4.1 发布前补充（只有毛仔与 Clara 开发的阶段）
+## 0.4.1 发布前补充
 
-毛仔决定 0.4.x 期间只有毛仔与 Clara 开发，协作流程等正式使用后再议。据此：`feat/chat` 快进合并到 main（不走 review），并补了以下改动后发布 v0.4.1。
+发布 v0.4.1 前补充了以下改动：
 
 - `/healthz` 返回 `version`、`handoff` 与 `chat_features`。不报告对话协议号：加密标识 `jand-chat/1` 在互不兼容的版本之间一直没变，报出来会让人误以为可以互通，所以改为逐项列出支持的功能。仍不含会话数与容量。此前每次部署都只能靠「新功能是否跑通」反推线上版本。
 - `send` 检测到文件看起来是未填写的模板（五个以上、且超过六成的 `- 字段：` 行是空的）时给出警告，仍然照常发送。实测中同事第一次发出的就是空模板。
 - `recv --wake` 不再暂存 `note`：它是没选类型时的默认值，可能其实是没标注的请求。现在只有明确选了、又不在唤醒列表里的类型（主要是 progress）会被暂存。
 - AGENT.md 补充 Claude Code 放行 jand 的写法（`permissions.allow` 中的 `Bash(路径:*)`），并强调放行不改变「不可信、先问用户」的契约。
 - `go test -race`、`go vet`、`make smoke`（18 项）、`compat_smoke.py` 通过。
-- 发布后，毛仔用 Release 中的 `jand-0.4.1-relay-deploy.zip` 重新部署公网 Relay。`/healthz` 返回 `"version":"0.4.1"` 与完整的 `chat_features`，公网 `chat_smoke.py`（13 项）与 `remote_smoke.py` 通过。`feat/chat` 已合入 main 并删除；此后新功能从 main 切分支开发，完成后合回并删除分支。
+- 发布后，使用 Release 中的 `jand-0.4.1-relay-deploy.zip` 部署公网 Relay。`/healthz` 返回 `"version":"0.4.1"` 与完整的 `chat_features`，公网 `chat_smoke.py`（13 项）与 `remote_smoke.py` 通过。
 
 ## 0.4.1 之后：Agent 干活中途被后台 recv 唤醒的时机
 
@@ -135,7 +135,7 @@
 
 ## 0.4.3：看得见对话经过、傻瓜化安装、token 优化
 
-毛仔反馈：对话全程由 Agent 在命令行里进行，人只能靠 Agent 事后的总结知道发生了什么。决定不做 GUI，而是从本机已有的对话记录生成可读的视图；数据只用本地文件，不引入数据库，Relay 继续不保存任何历史。
+对话全程由 Agent 在命令行里进行，人只能靠 Agent 事后的总结知道发生了什么。不做重型 GUI，而是从本机已有的对话记录生成可读视图；数据只用本地文件，不引入数据库，Relay 继续不保存任何历史。
 
 - 记录补全：发起方建房后写 `started`，接收方加入后写 `joined`，都带目标、预算和流程；发起方收到对方领取、加入时也记一行；`resumed` 带上新预算。建房后交接包没发出去（撤回）时，连同记录一起删除。
 - `jand chat list`：扫描 `$JAND_HOME/chats/`，列出每个对话的状态（waiting / active / paused / ended，旧对话没有记录的为 unknown，用状态文件时间代替）、消息数、最后活动时间和当前目标。
@@ -143,10 +143,10 @@
 - `jand chat view <chat>`：用 `html/template` 生成独立 HTML（CSP `default-src 'none'`，无脚本、无外部资源，文件权限 0600），默认写在对话目录并用系统浏览器打开；`--out` 指定位置，`--no-open` 不打开。己方消息靠右、对方靠左，Relay 事件居中；消息类型着色，「answers g2」可点回原消息；浅色与深色两套配色。
 - 测试：对话从 waiting 到 active、paused、ended 的状态变化；接收方记录以带目标的 `joined` 开头；列表的 JSON 中不含对话令牌和密钥；页面把对方写的 `<script>`、`<img onerror>` 转义输出；`log --follow` 在记录出现 closed 后退出。用真实的 0.4.1 公网对话 `cb7fc191` 生成页面，以无头 Chrome 截图检查浅色与深色显示。
 - 发现并修正：`compat_smoke.py` 没有为测试单独设置 `JAND_HOME`，会把测试对话的状态写进使用者真实的对话目录。现在改用临时目录并在结束时删除；修正后跑一遍，真实目录的文件数不变。
-- `jand help agent`：AGENT.md 嵌入程序（`docs` 包），运行时替换为本机程序的实际路径（PATH 上找到的正是自己时写 `jand`）和配置的 Relay，去掉只适用于发行包的段落。起初做成独立命令 `jand guide`，毛仔指出应走常规的 `help`；按 `git help <主题>` 的惯例改为 `help` 的主题，`jand help` 仍是简短用法。
-- 等消息的两种方式：AGENT.md 中 `mode:background` 与 `mode:poll` 两段，由本机配置 `chat.wake_mode` 选择；发行包（`release.py`）两段都保留。毛仔指出对方不一定用 Claude Code，而且有的 Agent 没有后台唤醒能力；默认推荐仍是 Claude Code。
+- `jand help agent`：AGENT.md 嵌入程序（`docs` 包），运行时替换为本机程序的实际路径（PATH 上找到的正是自己时写 `jand`）和配置的 Relay，去掉只适用于发行包的段落。按 `git help <主题>` 的惯例放在 `help` 子主题下，`jand help` 仍是简短用法。
+- 等消息的两种方式：AGENT.md 中 `mode:background` 与 `mode:poll` 两段，由本机配置 `chat.wake_mode` 选择；发行包（`release.py`）两段都保留，以兼容不支持后台唤醒的 Agent；默认推荐仍是 Claude Code。
 - `jand chat watch`：Relay 会删除 `after` 及之前的事件，所以提醒器若跑到 Agent 前面，会让 Agent 丢消息。实现上每次都从 Agent 的游标文件读取位置、用 `wait=0` 查询（不占每个对话 4 个长轮询名额），本地去重，不写记录、不改游标。测试：提醒器看到对方的 request 后，Agent 的 `recv` 仍然收到同一条；多次轮询不重复提醒；对话关闭后退出。
-- `chat view` 按毛仔的意见改版：中文；「我方 Agent / 对方 Agent / Relay」用颜色与标签区分；每条写明动作；请求追踪表、回复摘录、已回应/未回应、交付取代关系；按目标分段并写明结果。仍用无头 Chrome 截图检查。
+- `chat view` 改版：中文；「我方 Agent / 对方 Agent / Relay」用颜色与标签区分；每条写明动作；请求追踪表、回复摘录、已回应/未回应、交付取代关系；按目标分段并写明结果。用无头 Chrome 截图检查。
 - `jand setup`：给人用的首次配置（中文提示，可用参数免交互，可重复运行）。依次：Relay 地址并查 `/healthz`（版本不同时提示对话可能不兼容）；Relay 要求令牌时取令牌（`--token-file`、`JAND_ACCESS_TOKEN`、已配置的文件或当场输入，输入的令牌存成 `$JAND_HOME/access-token`，权限 600，配置只记路径）；选择 Agent（检测 `~/.claude`、`~/.codex`，默认选 Claude Code）：Claude Code 安装 `~/.claude/skills/jand/SKILL.md`（只指向 `jand help agent`），询问后在 `~/.claude/settings.json` 加 `Bash(<jand>:*)`（先备份，保留其他设置，已有则不改）；Codex 在 `~/.codex/AGENTS.md` 末尾加一段带标记的说明（重复运行替换，不重复追加）；其他 Agent 打印要贴的那句话；选择等消息的方式；写配置；自检（经配置的 Relay 给自己发一个文件、领取、比对内容、等回执）。
 - setup 测试（临时 HOME 与 JAND_HOME、要求令牌的测试 Relay）：免交互跑两遍，配置、skill、Claude 放行（原有设置保留、只备份一次）、Codex 说明（原内容不动、只有一段）都正确，自检通过；交互输入令牌时令牌文件为 600、`config.json` 中没有令牌本身，回答「否」的 Agent 不被改动；Relay 连不上时失败且不写配置。另用编译好的程序在临时 HOME 中接本机开启令牌的 Relay 真实跑一遍交互流程，全部步骤通过。
 - 安装脚本 `install.sh`（macOS/Linux）与 `install.ps1`（Windows）：从 GitHub Release 下载本机对应的包和 `SHA256SUMS.txt`，校验后安装，再运行 `jand setup`（`curl | sh` 时从 `/dev/tty` 读回答）。所有发行版都是预发布版，而 GitHub 的 `/releases/latest` 会跳过预发布版，所以改用版本列表取最新的一个。`install.sh` 实测（用 GitHub 上真实的 v0.4.1）：指定版本与自动取最新版都安装成功；模拟校验文件缺条目、哈希不一致两种情况都中止且不创建安装目录；以管道方式运行（同 `curl | sh`）正常；shellcheck 无告警。实测中发现变量后紧跟中文全角标点（如 `$version（`）时 bash 会把全角字符当作变量名的一部分而报错，已统一改为 `${变量}` 写法。**`install.ps1` 未实际运行过**（本机没有 PowerShell），需要在 Windows 上验证，尤其是旧版控制台对中文输出的显示。
@@ -154,9 +154,9 @@
 
 ### 冷启动实测（Ubuntu 22.04 x86_64 上的 Claude Code，2026-09-24）
 
-毛仔在内网 Ubuntu 服务器上照 QUICKSTART 解压、运行 `setup`（Relay 用公网 0.4.1），然后在全新的 Claude Code 会话里只说「用 jand 收一下：<码>」。Agent 通过 skill 找到 jand、运行 `jand help agent`，先把内容与目标给用户看，同意后加入对话，只读检查后以 delivery 交付环境报告，双方 done，Relay 以 `all_done` 暂停，checkpoint 事件带上了「暂停不是结束」的提示。领取与收发没有被宿主拦截（`setup` 写入的 `Bash(jand:*)` 放行生效）；`setup` 合并写入 `~/.claude/settings.json`，保留了原有的 `theme`。
+在内网 Ubuntu 服务器上照 QUICKSTART 解压、运行 `setup`（Relay 用公网 0.4.1），然后在全新的 Claude Code 会话里只说「用 jand 收一下：<码>」。Agent 通过 skill 找到 jand、运行 `jand help agent`，先把内容与目标给用户看，同意后加入对话，只读检查后以 delivery 交付环境报告，双方 done，Relay 以 `all_done` 暂停，checkpoint 事件带上了「暂停不是结束」的提示。领取与收发没有被宿主拦截（`setup` 写入的 `Bash(jand:*)` 放行生效）；`setup` 合并写入 `~/.claude/settings.json`，保留了原有的 `theme`。
 
-实测中毛仔指出：等消息方式要人输入 `background` / `poll` 太难。改为只选 Claude Code 时自动设定，其他情况用 y/n 提问。
+实测中发现等消息方式让用户手动输入 `background` / `poll` 过于繁琐，改为只选 Claude Code 时自动设定，其他情况用 y/n 提问。
 
 对方 Agent 报告的问题与处理：
 - Relay 根路径返回 404，被当成「Relay 挂了」：根路径改为返回 200 和一段说明（程序、版本、`/healthz`）。
@@ -166,7 +166,7 @@
 - 顺带发现：速查与正文让 Agent 按 `jand-template.md` 写交接文件，但用安装脚本或单独拷贝程序的人没有这个文件。模板也嵌入程序，新增 `jand help template`。
 - 未改（有意的设计）：接收方在 `join` 之前没有对话 ID；收到对话邀请要先问用户再加入。
 
-### 查看版本、安装位置与卸载（毛仔提出）
+### 查看版本、安装位置与卸载
 
 - `jand version`：版本、程序实际位置、配置文件、Relay 的版本与兼容性（连不上时说明原因）。`jand --version` 仍只输出版本号，安装脚本和 `compat_smoke` 依赖它。
 - setup 结束时列出 jand 在本机用到的所有位置，并记入 `$JAND_HOME/installed.json`（程序、Claude skill、放行规则、setup 的备份、是否由 setup 新建了 `settings.json`、Codex 文件）；中文标签按显示宽度对齐。
@@ -174,7 +174,7 @@
 - 测试：卸载后备份包内容恰为对话记录、页面、配置和安装记录，不含密钥与令牌；程序、jand 目录中的条目、skill、setup 的备份都被删除；`settings.json` 保留原有设置与规则、只少 jand 的那条；Codex 文件恢复原样；收到的文件默认保留、选择删除时进入备份包；`JAND_HOME` 中的外来文件与被误设为收件目录的家目录不受影响；`--dry-run` 不改任何东西；setup 新建的 `settings.json` 卸载后不残留。测试先抓到一处错误：用户用 `--token-file` 提供的令牌文件被当作 jand 的文件删除，已改为保留。
 - 用编译好的程序在临时 HOME 中实走 setup → version → uninstall：卸载后只剩历史备份包（以及原本就会存在的父目录）。
 
-### 以 Agent 为界面的易用性（毛仔：「实际使用时基本不手敲命令，都是让 Agent 执行」）
+### 以 Agent 为界面的易用性
 
 - 接收链接：`queued` 带 `link`（`https://<relay>/r#<接收码>`）与 `expires_in`；接收、`chat join`、`chat decline` 都接受链接，从中取 Relay 地址，接收方不必事先配置；与 `--relay` 不一致时报错。Relay 新增 `/r` 说明页（浏览器打开链接时看到如何交给 Agent、如何安装；`#` 之后的接收码不会发到服务器）和 `/` 纯文本说明。实测：接收方不配置 Relay、只用链接领取成功，Relay 日志中不含接收码。
 - 有效期：交接包默认 30 分钟（原 10 分钟），对话邀请 35 分钟（原 15 分钟），因为接收码要经过人手转发。上传成功的 201 响应带 `X-Handoff-Expires-In`，客户端据此显示有效期，不再写死。
@@ -184,7 +184,7 @@
 - `chat list` 默认隐藏一周前已结束或状态不明的对话，`--all` 显示全部；它的读者多半是 Agent，旧条目只是白占上下文。
 - 不做：`view` / `watch` 不带对话 ID 时默认取最近的对话——Agent 手里总有 ID。
 
-### token 优化（毛仔：「现在开销有点大」）
+### token 优化
 
 实测：`help agent` 全文约 14,000 字符（中文约 6,300 字），约 8–9k token，每个会话读一遍；Ubuntu 那次对话的完整 `chat log` 6,915 字符。
 
@@ -192,13 +192,13 @@
 - 按需提示：`saved`（对话邀请）、`queued`（发起对话）、`joined` 事件带 `"guide":"chat"`，Agent 在进入对话时才读对话规则。
 - `chat log --brief`：每条一行、正文截到 100 字；AGENT.md「用户问进度」改用它。Ubuntu 那次对话 6,915 → 857 字符。
 - 消息写短：协作规矩里写明各类消息的篇幅，大段内容用 delivery / `--file`。
-- 不做：长消息自动存文件（毛仔：交付物要仔细看）；精简 JSON 字段（省得少、改接口）。
+- 不做：长消息自动存文件（交付物需要直接查看）；精简 JSON 字段（收益有限且会破坏接口）。
 
 ### 0.4.3 发布前
 
 - 兼容：用真实 0.4.1 程序（`~/go/bin/jand`）与 0.4.3 在 0.4.3 Relay 上互为发起方与接收方，邀请、加入、request/reply、双方 done、`all_done` 检查点均正常；`compat_smoke.py` 新旧四种组合交接均 `delivered`。0.4.3 客户端经公网 0.4.1 Relay 的交接与对话，由 Ubuntu 冷启动实测覆盖。
 - `go test -race`、`go vet`、`make smoke`（交接 5 项、对话 14 项）通过。
-- 部署后（毛仔用 `jand-0.4.3-relay-deploy.zip` 升级公网 Relay）：`/healthz` 返回 `"version":"0.4.3"`、`"access":false`；`/` 返回说明文字；`/r` 返回说明页（200，text/html）；用 0.4.3 客户端经公网发送，`expires_in` 为 1800，接收方不配置 Relay、只凭链接领取成功；公网 `chat_smoke.py`（14 项）与 `remote_smoke.py` 通过。发行包 6 个归档校验通过，macOS 版签名并公证（`spctl`：Notarized Developer ID），全部归档与其中的程序均不含真实域名或 IP。
+- 部署后（使用 `jand-0.4.3-relay-deploy.zip` 升级公网 Relay）：`/healthz` 返回 `"version":"0.4.3"`、`"access":false`；`/` 返回说明文字；`/r` 返回说明页（200，text/html）；用 0.4.3 客户端经公网发送，`expires_in` 为 1800，接收方不配置 Relay、只凭链接领取成功；公网 `chat_smoke.py`（14 项）与 `remote_smoke.py` 通过。发行包 6 个归档校验通过，macOS 版签名并公证（`spctl`：Notarized Developer ID），全部归档与其中的程序均不含真实域名或 IP。
 
 ### 0.4.3 发布后
 
@@ -250,7 +250,7 @@ GitHub Release v0.4.3（预发布，7 个附件经 API 核对均已上传、大�
 
 ### 第一次双机实测（2026-09-29）
 
-本机 Claude Code 做发起方（`--advance auto`），毛仔的 Ubuntu 22.04 做接收方（`--advance 5m`），经公网 0.4.5 Relay 对话 `8080e0a1`，目标 1 查系统版本，计划为查内存、一句话汇总。
+本机 Claude Code 做发起方（`--advance auto`），远端 Ubuntu 22.04 做接收方（`--advance 5m`），经公网 0.4.5 Relay 对话，目标 1 查系统版本，计划为查内存、一句话汇总。
 
 - 11:01:28 接收方 join（人的决定）。11:02:17 检查点，11:02:30 发起方 `advance` 提出目标 2，11:07:17 接收方超时自动接受；11:07:53 检查点，11:07:57 提出目标 3，11:12:55 自动接受；11:13:23 计划走完，检查点不带 `advance_at`，由接收方的用户 close。各目标交付与核对都正确。
 - 发起方账单：人做决定 0、`advance` 2、送进上下文 7.9 KB、写出 641 B、空唤醒 0。接收方自述：用户只在加入与收尾时被打断。上次（0.4.4，两个目标）：3 次决定、约 10 分钟。
@@ -259,7 +259,7 @@ GitHub Release v0.4.3（预发布，7 个附件经 API 核对均已上传、大�
 
 ### 发布（2026-09-29）
 
-- 按毛仔的决定，只发布 0.4.5，0.4.4 不单独发布。main 快进到 `b91db17` 并推送；tag `v0.4.5`；GitHub 预发布版，7 个资产。
+- 将 0.4.4 变更合并进 0.4.5 一并发布。main 快进到 `b91db17` 并推送；tag `v0.4.5`；GitHub 预发布版，7 个资产。
 - 发布包由 `release.py --sign … --notary-profile …` 从已推送的提交构建：6 个包的 SHA-256 都校验通过；解开全部包扫描，不含真实的 Relay 地址；macOS 两个包签名后提交公证，状态 Accepted，`spctl` 显示 `Notarized Developer ID`。
 - 从 GitHub 下载的 macos-arm64 包 SHA-256 与 SHA256SUMS.txt 一致；`install.sh` 以管道方式装进临时目录（`JAND_NO_SETUP=1`），取到的是 0.4.5，能通过 `spctl`。
 - 公网 Relay 与 Ubuntu 在发布前已部署 `7797e47` 构建的 0.4.5 包，与发布版只差说明书（`b91db17`）。Windows 仍未实测。

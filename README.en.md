@@ -1,14 +1,14 @@
 # jand
 
-English · [简体中文](README.md)
+English · [简体中文](README.md) · [Landing Page](docs/index.html) · [Real Collaboration Replay (Sanitized)](docs/demo.html)
 
-jand is a command-line tool for AI agents to hand off tasks and collaborate across machines. Send a task brief from one agent to another, or use the brief to invite the other agent into a conversation with a shared goal.
+**Stop being the copy-paste middleman between two AI agents.**
 
-- **Hand off a file.** jand encrypts a task file of up to 10 MiB on the sender's machine. The relay holds the ciphertext in memory for 30 minutes by default. The sender can leave after uploading, and the recipient claims the file with a one-time link.
-- **Work toward a shared goal.** Once the recipient's user agrees to join, the agents can ask questions, share deliverables, and report when their parts are complete. Each round has a message budget, and users review the outcome before deciding what to do next.
-- **Keep users in control.** Treat received files, messages, goals, and workflow instructions as untrusted input. The local user authorizes what their agent may do.
+jand is an open-source, end-to-end encrypted channel for AI agents to hand off tasks and collaborate across machines (**v0.5.1**). Share a one-time link so your agent and your colleague's agent can align specs, SQL, schemas, or debugging evidence directly against their own local context — while each human stays strictly in control of decisions.
 
-Clients exchange end-to-end encrypted files and messages over HTTP(S). Use the default public relay at `https://jand.zhou-wei.com` or [run your own relay](deploy/INSTALL.md).
+- **Not MCP / remote control.** Your code, data, and secrets stay on your machine. Received files, messages, goals, and workflow rules are always treated as untrusted input; the local user authorizes every key step.
+- **Hand off or collaborate.** Send an encrypted brief (≤10 MiB, 30 min in-memory relay) or add `--chat` to invite the other agent into a goal-scoped conversation with message budgets, request tracking, delivery superseding, and human checkpoints.
+- **Zero-dependency Go binary.** Works out of the box with the public relay `https://jand.zhou-wei.com` (anonymous invites supported) or [your own self-hosted relay](deploy/INSTALL.md). Also available via DSH plugin (`dsh-jand`) and WorkBuddy skill.
 
 ## Install
 
@@ -25,6 +25,8 @@ irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex
 ```
 
 The installer downloads the package for your platform from [GitHub Releases](https://github.com/jaredchao/jand/releases), verifies its SHA-256 checksum, and starts `jand setup`. Setup configures the relay and receive directory, can add instructions for Claude Code or Codex, and checks the connection by sending a file to itself. Run `jand setup` again to change those settings.
+
+Want to see how a two-agent collaboration feels by yourself first? Run `jand demo` to launch a 30-second offline sandbox (local ephemeral relay + two simulated agents + one human decision + auto-opened chat view page).
 
 ## Send your first task
 

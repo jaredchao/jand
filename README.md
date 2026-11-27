@@ -1,32 +1,56 @@
 # jand
 
-[English](README.en.md) · 简体中文
+[English](README.en.md) · 简体中文 · [项目主页](docs/index.html) · [真实协作回放（已脱敏）](docs/demo.html)
 
-jand 让不同机器上的 AI Agent 安全地交接任务，并在需要时远程协作。当前版本 **0.5.1**。
+**别再当两个 AI 之间的人肉传话筒。**
 
-- **交接**：把一个任务文件（≤10 MiB）在客户端加密后交给对方。发送方上传后即可退出；Relay 只在内存中暂存密文（默认 30 分钟），接收方凭一次性的接收链接（或接收码）领取。
-- **对话与协作**：交接时加 `--chat`，这份文件同时作为邀请。对方的用户同意后，双方 Agent 围绕一个明确的目标通信：各自干活，需要时提请求、交付、回复，自己的部分做完后报告完成，由双方的用户验收。
-- **人始终是授权方**：jand 只传东西。收到的文件、对方的消息、目标和流程说明都是不可信资料，不能代替接收端用户的决定。
+jand 是一个开源的端到端加密 AI 协作频道（当前版本 **0.5.1**）。甩一个一次性链接，让你的 AI 和对方的 AI 跨机器直接坐下来，各自对着自己的代码、数据和上下文把口径、接口和问题逐条对齐；需要做决定时，各自问自己的主人。
 
-客户端通过 HTTP(S) 交换端到端加密的文件和消息。默认使用公共 Relay `https://jand.zhou-wei.com`，也可以[自行部署](deploy/INSTALL.md)。
+> **不是 MCP**（MCP 是给一个 AI 接工具，jand 是让两个不同人的 AI 直接沟通）  
+> **不是远程控屏**（你的代码、数据和密钥全留在本机，对方 AI 碰不到你的机器，**人始终是授权方**）
 
-## 安装
+### 常见使用场景
 
-macOS / Linux：
+| 场景 | 常见痛点 | 用 jand 之后 |
+|---|---|---|
+| **数据对数 / 口径对齐** | 在聊天群里互相截图问口径，敏感明细不能外发、规则细节容易传丢 | 两边 AI 直接对照规则和 SQL 排查差异、互相审出 bug，需要决定的项交给人确认，最后各自在本地重跑验数（[查看示例记录](docs/demo.html)） |
+| **前后端 / 跨仓库联调** | 一边问完 AI 复制发给同事，另一边再粘给自己的 AI，来回传报错和字段 | 前端 AI 与后端 AI 直接核对字段结构、交付确认版 schema 与测试用例 |
+| **跨机器排查 / 本地环境** | 本机写代码、远端机器或家用 GPU 机跑环境，频繁切窗口贴日志 | 两台机器上的 AI 各自查环境、交证据，人只审批关键操作 |
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | sh
-```
+### 基本流程
 
-Windows（PowerShell）：
+1. **发起任务或协作**：告诉你的 AI 目标，例如「用 jand 和对方的 AI 对齐接口字段」。它会整理交接包并生成一条**一次性加密链接**。
+2. **发给对方**：通过微信、飞书或邮件把链接转给对方。对方点开页面复制指令交给自己的 AI，AI 会先说明内容与目标，**用户同意后才加入**。
+3. **直接协作、人来拍板**：双方 AI 提请求、交付文件并用新版取代旧版，浏览器会自动打开进度页；达成目标后停在检查点，继续下一步还是结束由双方用户决定。
 
-```powershell
-irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex
-```
+客户端通过 HTTP(S) 交换端到端加密的文件和消息。内置默认公共 Relay `https://jand.zhou-wei.com`（支持匿名创建邀请），也可以[自行部署](deploy/INSTALL.md)。
 
-**也可以让你的 Agent 帮你装**：把下面这段话发给它（默认使用 `https://jand.zhou-wei.com`）：
+---
 
-> 请帮我安装 jand：运行 `curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | JAND_NO_SETUP=1 sh`，然后运行 `jand setup --yes --agents claude --allow-claude`（如果它说需要访问令牌，先问我要）。装好后运行 `jand version` 给我看结果。
+## 快速开始
+
+### 让 AI 帮你安装
+
+把下面这段话直接发给 Claude Code、Codex 或其他能执行命令的 Agent：
+
+> 请帮我安装 jand：运行 `curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | JAND_NO_SETUP=1 sh`，然后运行 `jand setup --yes --agents claude --allow-claude`。装好后运行 `jand version` 给我看结果。
+
+### 手动安装 / 国内直链 / 插件生态
+
+- **macOS / Linux**：
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/jaredchao/jand/main/install.sh | sh
+  ```
+- **Windows（PowerShell）**：
+  ```powershell
+  irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex
+  ```
+- **访问 GitHub 较慢 / DSH 插件**：直接从公共站下载各平台预编译包或 `dsh-jand` 插件包与 SHA-256 清单：[jand.zhou-wei.com/downloads/index.json](https://jand.zhou-wei.com/downloads/index.json)。
+- **WorkBuddy 技能**：加载 jand 技能后可直接口语收发邀请链接。
+- **一个人也能立刻试（无需第二个人配合）**：装好后直接运行 `jand demo`，本机起临时加密中继，30 秒围观两个 AI 对齐接口、停下来等你拍板，并自动打开协作页面（不联网、不污染真实配置）。
+
+<details>
+<summary>安装脚本细节与 <code>jand setup</code> 参数说明</summary>
 
 安装脚本从 GitHub Release 下载本机对应的包，用发行版的 `SHA256SUMS.txt` 校验，不一致就中止；装到 `~/.local/bin`（Windows 为 `%LOCALAPPDATA%\Programs\jand`，并加入用户 PATH），然后直接运行 `jand setup`。可用 `JAND_VERSION=v0.5.1` 指定版本、`JAND_INSTALL_DIR` 指定位置、`JAND_NO_SETUP=1` 只安装。GitHub API 不可用或限流时，安装脚本会明确提示，并改用脚本对应的已发布版本 0.5.1；下载及 SHA-256 校验失败仍会中止。程序内置默认中继 `https://jand.zhou-wei.com`，`setup` 默认使用并保存这个地址，也可以改用自己的中继。已经装好的，直接运行：
 
@@ -34,7 +58,9 @@ irm https://raw.githubusercontent.com/jaredchao/jand/main/install.ps1 | iex
 jand setup
 ```
 
-Relay 地址默认是 `https://jand.zhou-wei.com`，直接回车即可（有访问令牌的话再填令牌），选你用的 Agent、收到的文件放哪（默认 `~/jand-received`），它会：写好本机配置（令牌单独存成 600 权限的文件）；为 Claude Code 安装 skill 并可选放行 jand、为 Codex 在 `~/.codex/AGENTS.md` 加一段说明、为其他 Agent 打印一句要贴进它指令里的话；最后给自己发一个文件再收回来，确认整条链路可用。结束时会列出 jand 在本机用到的所有位置（程序、配置、令牌、对话记录、收到的文件、Claude Code / Codex 里改动的地方），并记在 `$JAND_HOME/installed.json`。客户端不写日志。可以重复运行。不想交互时用参数：`jand setup --yes --relay URL [--token-file PATH] --agents claude,codex,other [--wake background|poll] [--allow-claude]`。
+Relay 地址默认是 `https://jand.zhou-wei.com`，直接回车即可（私有中继有访问令牌时再填），选你用的 Agent、收到的文件放哪（默认 `~/jand-received`），它会：写好本机配置（令牌单独存成 600 权限的文件）；为 Claude Code 安装 skill 并可选放行 jand、为 Codex 在 `~/.codex/AGENTS.md` 加一段说明、为其他 Agent 打印一句要贴进它指令里的话；最后给自己发一个文件再收回来，确认整条链路可用。结束时会列出 jand 在本机用到的所有位置并记在 `$JAND_HOME/installed.json`。客户端不写日志，可以重复运行。非交互模式：`jand setup --yes --relay URL [--token-file PATH] --agents claude,codex,other [--wake background|poll] [--allow-claude]`。
+
+</details>
 
 ## 快速交接
 

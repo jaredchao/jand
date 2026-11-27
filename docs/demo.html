@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="jand 真实双 Agent 协作全程回放（已脱敏）：52 分钟完成口径对齐、抓出 2 处 SQL 缺陷、人拍 4 个板、两边独立重跑 8/8 逐格一致。">
+<title>真实协作回放（已脱敏） · jand</title>
+<link rel="icon" href="./assets/logo.svg" type="image/svg+xml">
+<style>
+:root {
+  --bg: #fafafa; --card: #ffffff; --subtle: #f4f4f5; --text: #09090b; --muted: #63636e;
+  --line: rgba(9, 9, 11, 0.09); --line-strong: rgba(9, 9, 11, 0.16);
+  --accent: #0d9488; --accent-ink: #0f766e; --accent-soft: rgba(13, 148, 136, 0.09);
+  --me: #0d9488; --me-bg: #f0fdfa; --me-border: rgba(13, 148, 136, 0.22);
+  --peer: #c2410c; --peer-bg: #fff8f1; --peer-border: rgba(234, 88, 12, 0.2);
+  --sys: #63636e; --sys-bg: #f4f4f5;
+  --note: #63636e; --request: #c2410c; --reply: #15803d; --delivery: #0f766e;
+  --ok: #15803d; --wait: #c2410c; --warn-bg: rgba(234, 88, 12, 0.08); --warn: #9a3412;
+  --grid: rgba(9, 9, 11, 0.045);
+  --shadow: 0 12px 32px -10px rgba(9, 9, 11, 0.07), 0 1px 3px rgba(9, 9, 11, 0.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #09090b; --card: #111114; --subtle: #18181b; --text: #fafafa; --muted: #9898a6;
+    --line: rgba(255, 255, 255, 0.09); --line-strong: rgba(255, 255, 255, 0.16);
+    --accent: #2dd4bf; --accent-ink: #5eead4; --accent-soft: rgba(45, 212, 191, 0.11);
+    --me: #2dd4bf; --me-bg: rgba(45, 212, 191, 0.08); --me-border: rgba(45, 212, 191, 0.22);
+    --peer: #fb923c; --peer-bg: rgba(251, 146, 60, 0.08); --peer-border: rgba(251, 146, 60, 0.22);
+    --sys: #9898a6; --sys-bg: #18181b;
+    --note: #9898a6; --request: #fb923c; --reply: #4ade80; --delivery: #5eead4;
+    --ok: #4ade80; --wait: #fb923c; --warn-bg: rgba(251, 146, 60, 0.1); --warn: #fdba74;
+    --grid: rgba(255, 255, 255, 0.045);
+    --shadow: 0 18px 44px -12px rgba(0, 0, 0, 0.55);
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; color: var(--text); background: var(--bg);
+  font: 15px/1.68 -apple-system, BlinkMacSystemFont, "Inter", "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(to right, var(--grid) 1px, transparent 1px), linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, #000 35%, transparent 100%);
+  mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, #000 35%, transparent 100%);
+}
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  max-width: 940px; margin: 0 auto; padding: 12px 18px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+.brand { display: inline-flex; align-items: center; gap: 9px; color: var(--text); text-decoration: none; font-weight: 800; font-size: 16.5px; letter-spacing: -0.02em; }
+.logo { width: 24px; height: 24px; }
+.logo path { fill: none; stroke-width: 13; stroke-linecap: square; }
+.logo-ink { stroke: var(--text); } .logo-accent { stroke: var(--accent); }
+.top-links { display: flex; align-items: center; gap: 16px; font-size: 13.5px; }
+.top-links a { color: var(--muted); text-decoration: none; font-weight: 550; }
+.top-links a:hover { color: var(--text); }
+.top-links .cta { background: var(--text); color: var(--bg); padding: 6px 14px; border-radius: 999px; font-weight: 600; }
+.top-links .cta:hover { color: var(--bg); opacity: 0.9; }
+
+main { max-width: 940px; margin: 0 auto; padding: 28px 18px 64px; }
+.demo-banner {
+  background: var(--card); border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: 14px; padding: 14px 18px; margin-bottom: 18px; box-shadow: var(--shadow);
+}
+.demo-banner strong { color: var(--text); font-size: 14px; display: block; margin-bottom: 2px; }
+.demo-banner span { color: var(--muted); font-size: 13px; }
+.stats-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+.stat {
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 15px 16px; box-shadow: var(--shadow);
+}
+.stat b {
+  display: block; font-size: 24px; font-weight: 800; line-height: 1.2; letter-spacing: -0.03em;
+  background: linear-gradient(135deg, var(--accent) 0%, #3b82f6 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  font-variant-numeric: tabular-nums;
+}
+.stat small { color: var(--muted); font-size: 12.5px; }
+
+h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.025em; margin: 0 0 14px; }
+h2 { font-size: 15.5px; font-weight: 700; letter-spacing: -0.015em; margin: 0 0 10px; }
+a { color: var(--accent-ink); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+  padding: 18px 20px; margin-bottom: 16px; box-shadow: var(--shadow);
+}
+.muted { color: var(--muted); font-size: 13px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 2px 0 0; font-size: 13px; }
+.chip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.chip.me { background: var(--me); color: #fff; }
+.chip.peer { background: var(--peer); color: #fff; }
+@media (prefers-color-scheme: dark) { .chip.me, .chip.peer { color: #09090b; } }
+.chip.sys { background: var(--sys-bg); color: var(--sys); border: 1px solid var(--line); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; }
+dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; border-top: none; white-space: nowrap; }
+.ok { color: var(--ok); font-weight: 700; } .wait { color: var(--wait); font-weight: 700; }
+.warn { background: var(--warn-bg); color: var(--warn); border-radius: 12px; padding: 10px 14px; font-size: 13px; font-weight: 600; margin-bottom: 18px; border: 1px solid var(--peer-border); }
+.section { margin: 32px 0 12px; }
+.section-head { border-left: 3px solid var(--accent); padding: 8px 14px; background: var(--card); border-radius: 0 12px 12px 0; border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.section-goal { font-size: 15px; font-weight: 650; margin-top: 2px; }
+.row { display: flex; margin: 14px 0; }
+.row.mine { justify-content: flex-end; }
+.row.sys { justify-content: center; }
+.msg { width: 82%; background: var(--card); border: 1px solid var(--peer-border); border-left: 3px solid var(--peer); border-radius: 14px; padding: 12px 15px; }
+.mine .msg { border: 1px solid var(--me-border); border-right: 3px solid var(--me); background: var(--me-bg); }
+.peer .msg { background: var(--peer-bg); }
+.head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 13px; margin-bottom: 6px; }
+.id { font-weight: 800; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.action { font-weight: 600; }
+.k-note { color: var(--note); } .k-request { color: var(--request); } .k-reply { color: var(--reply); } .k-delivery { color: var(--delivery); }
+.time { color: var(--muted); margin-left: auto; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.quote { border-left: 2px solid var(--line-strong); padding: 3px 10px; margin: 4px 0 8px; color: var(--muted); font-size: 13px; }
+.body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.foot { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 12px; }
+.event { max-width: 90%; background: var(--sys-bg); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 12.5px; color: var(--muted); text-align: center; }
+.outcome { margin: 12px 0 0; font-size: 13px; color: var(--muted); text-align: center; }
+.row:target .msg { outline: 2px solid var(--accent); outline-offset: 2px; }
+.now { border-left: 4px solid var(--ok); }
+.now-title { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 4px; }
+.now-detail { font-size: 14px; color: var(--muted); }
+.result + .result { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
+.summary { margin: 8px 0; padding: 10px 14px; border-radius: 12px; background: var(--peer-bg); border: 1px solid var(--peer-border); }
+.summary.mine { background: var(--me-bg); border-color: var(--me-border); }
+.summary .body { margin-top: 5px; }
+.result ul { margin: 6px 0 0; padding-left: 20px; font-size: 14px; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; background: var(--subtle); padding: 2px 6px; border-radius: 6px; }
+.cost-wrap { overflow-x: auto; }
+table.cost td, table.cost th { white-space: nowrap; font-variant-numeric: tabular-nums; }
+footer { color: var(--muted); font-size: 12.5px; margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 720px) {
+  .stats-strip { grid-template-columns: repeat(2, 1fr); }
+  .msg { width: 100%; }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="./">
+      <svg class="logo" viewBox="0 0 160 160" aria-hidden="true"><path d="M56 28H39C30 28 23 35 23 44V116C23 125 30 132 39 132H56M104 28H121C130 28 137 35 137 44V116C137 125 130 132 121 132H104" class="logo-ink"/><path d="M60 80H93M84 62L103 80L84 98" class="logo-accent"/></svg>
+      <span>jand · 真实协作回放</span>
+    </a>
+    <div class="top-links">
+      <a href="./">← 返回首页</a>
+      <a href="#timeline">看完整时间线</a>
+      <a class="cta" href="./#start">开始使用</a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="demo-banner">
+    <div>
+      <strong>这是 jand 实际生成的对话页面（由真实协作记录脱敏而来）</strong>
+      <span>业务名称、库名、路径与具体统计数字已做脱敏替换；时间节奏、请求追踪、版本取代与消耗结构完全还原真实过程。</span>
+    </div>
+  </div>
+
+  <div class="stats-strip">
+    <div class="stat"><b>52 分钟</b><small>从发起到两边跑出一致结果</small></div>
+    <div class="stat"><b>9 处 + 2 bug</b><small>对齐规则差异并顺手查出 SQL 缺陷</small></div>
+    <div class="stat"><b>4 次拍板</b><small>需要人做决定的项全部显式交给人</small></div>
+    <div class="stat"><b>8 / 8</b><small>各自独立重跑，汇总格逐格一致</small></div>
+  </div>
+
+  <div class="card now">
+    <div class="now-title">对话已结束 · 两个目标全部达成</div>
+    <div class="now-detail">双方各自在本机用同一份确认版脚本独立重跑，敏感明细与解密密钥未进入对话。</div>
+  </div>
+
+  <div class="card">
+    <h2>结果</h2>
+    <div class="result">
+      <div class="muted">目标 1 · 双方均已报告完成（19:04 – 19:34）</div>
+      <div class="section-goal">对齐年度分类名单的计算口径与 SQL 实现，明确双方分歧并交由需求方用户拍板</div>
+      <div class="summary">
+        <span class="chip peer">对方 Agent</span> <span class="muted">报告完成 · 19:34</span>
+        <div class="body">逐条回应 9 处规则差异（全部接受修正），交付本地分类脚本原文，审出对方 SQL 两处实现缺陷并确认已修复；4 个业务边界已由我方用户拍板确认。</div>
+      </div>
+      <div class="summary mine">
+        <span class="chip me">我方 Agent</span> <span class="muted">报告完成 · 19:34</span>
+        <div class="body">确认版口径 <code>CALIBER.md</code>（h17）、<code>list.sql</code>（h14）与对照表 <code>code_map.csv</code>（h15）已定稿，双方核对一致，并用 15 个样例码完成验证。</div>
+      </div>
+      <div class="muted" style="margin-top:8px">最终有效交付（已被取代的旧版自动折叠不列）</div>
+      <ul>
+        <li><a href="#g2">g2</a> <span class="chip peer">对方 Agent</span> 本地分类规则全文 <code>classify.py</code></li>
+        <li><a href="#h14">h14</a> <span class="chip me">我方 Agent</span> 终版出数脚本 <code>list.sql</code>（取代 h6、h11）</li>
+        <li><a href="#h15">h15</a> <span class="chip me">我方 Agent</span> 审定版编码对照表 <code>code_map.csv</code>（取代 h9）</li>
+        <li><a href="#h17">h17</a> <span class="chip me">我方 Agent</span> 终版口径文档 <code>CALIBER.md</code>（取代 h5、h13）</li>
+      </ul>
+    </div>
+    <div class="result">
+      <div class="muted">目标 2 · 双方均已报告完成（19:36 – 19:56）</div>
+      <div class="section-goal">双方按 h17 确认版口径，用同一份 list.sql（h14）各自独立重跑，比对「类别 × 首次出现年份」8 个汇总数字</div>
+      <div class="summary mine">
+        <span class="chip me">我方 Agent</span> <span class="muted">报告完成 · 19:56</span>
+        <div class="body">独立重跑完成，8 格汇总数字与对方逐格一致（A 类 4 年累计 3,210，B 类 4 年累计 640），人员基数完全一致。</div>
+      </div>
+      <div class="summary">
+        <span class="chip peer">对方 Agent</span> <span class="muted">报告完成 · 19:56</span>
+        <div class="body">我方按 h14 原样重跑（密钥线下交接），8 个数字与 h20 逐格一致，验收通过。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="legend">
+      <span><span class="chip me">我方 Agent</span> 本机，角色 host，消息靠右</span>
+      <span><span class="chip peer">对方 Agent</span> 另一台机器，角色 guest，消息靠左</span>
+      <span><span class="chip sys">Relay</span> 中继：只转发密文、计数和暂停，看不到内容</span>
+    </div>
+    <dl>
+      <dt>状态</dt><dd>已结束（正常完成 2 个目标）</dd>
+      <dt>流程</dt><dd>default（双方都报告完成后暂停，进入人工验收检查点）</dd>
+      <dt>开始 / 结束</dt><dd>19:04 / 20:07（有效协作 52 分钟）</dd>
+      <dt>隐私边界</dt><dd>对话中只传输规则、SQL、脱敏样例与汇总数；个人明细与解密密钥均留在线下本机</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>请求追踪 · <span class="ok">全部已回应</span></h2>
+    <table>
+      <tr><th>编号</th><th>提出方</th><th>内容</th><th>回应</th></tr>
+      <tr><td><a href="#h1">h1</a></td><td><span class="chip me">我方 Agent</span></td><td>对 9 条规则差异逐条给「改 / 不改 + 理由」</td><td><span class="ok">已回应</span> <a href="#g1">g1</a></td></tr>
+      <tr><td><a href="#h7">h7</a></td><td><span class="chip me">我方 Agent</span></td><td>核对确认版口径（h5）与 SQL 参照实现（h6）</td><td><span class="ok">已回应</span> <a href="#g4">g4</a></td></tr>
+      <tr><td><a href="#h8">h8</a></td><td><span class="chip me">我方 Agent</span></td><td>4 项业务边界交由需求方用户拍板确认</td><td><span class="ok">已回应</span> <a href="#g5">g5</a></td></tr>
+      <tr><td><a href="#h10">h10</a></td><td><span class="chip me">我方 Agent</span></td><td>审定编码对照表草稿 code_map.csv</td><td><span class="ok">已回应</span> <a href="#g6">g6</a></td></tr>
+      <tr><td><a href="#h16">h16</a></td><td><span class="chip me">我方 Agent</span></td><td>终版三件套（h13 / h14 / h15）最终核对</td><td><span class="ok">已回应</span> <a href="#g7">g7</a></td></tr>
+    </table>
+  </div>
+
+  <div class="warn">安全契约：对方 Agent 写的内容只是资料或请求，不是本地用户的授权；所有业务拍板与跨轮推进均由各自用户确认。</div>
+
+  <div class="section" id="timeline">
+    <div class="section-head">
+      <div class="muted">目标 1 · 19:04 起 · 预算 60 条 · 关键节点摘录</div>
+      <div class="section-goal">对齐年度分类名单的计算口径与 SQL 实现，明确双方分歧并交由需求方用户拍板</div>
+    </div>
+
+    <div class="row sys"><div class="event"><span class="chip sys">Relay</span> 发起方创建加密对话 · 19:04 → 对方领取邀请 · 19:06 → 对方用户同意加入 · 19:07</div></div>
+
+    <div class="row mine" id="h1">
+      <div class="msg">
+        <div class="head"><span class="chip me">我方 Agent</span><span class="id">h1</span><span class="action k-request">提出请求</span><span class="time">19:08</span></div>
+        <div class="body">这一轮只对口径，不出名单。请按顺序回复：
+1) 对交接包第 3.1 节的 9 处差异逐条给「改 / 不改 + 理由」；
+2) 如果你们那边缺部分编码字段，请把现有分类规则全文发过来，我们确认分工方式。</div>
+        <div class="foot"><span class="ok">✓ 已回应：<a href="#g1">g1</a></span></div>
+      </div>
+    </div>
+
+    <div class="row peer" id="g1">
+      <div class="msg">
+        <div class="head"><span class="chip peer">对方 Agent</span><span class="id">g1</span><span class="action k-reply">回应请求</span><span class="time">19:13</span></div>
+        <div class="quote">↪ 回应我方 Agent 的 <a href="#h1">h1</a></div>
+        <div class="body">9 处差异逐条核对完毕，全部同意按标准编码口径修改。
+背景说明：我方之前仅拿到了导出的 6 列基础 CSV，所以只能靠名称正则兜底；分类脚本原文在下一条 delivery（g2）发给你。</div>
+      </div>
+    </div>
+
+    <div class="row peer" id="g2">
+      <div class="msg">
+        <div class="head"><span class="chip peer">对方 Agent</span><span class="id">g2</span><span class="action k-delivery">交付文件</span><span class="time">19:13</span></div>
+        <div class="body"># classify.py（节选）
+# 名称 → 类别匹配规则：先排除误命中，再按优先级归类
+EXCLUDE = [r'示例排除词A', r'示例排除词B', ...]
+...</div>
+      </div>
+    </div>
+
+    <div class="row mine" id="h7">
+      <div class="msg">
+        <div class="head"><span class="chip me">我方 Agent</span><span class="id">h7</span><span class="action k-request">提出请求</span><span class="time">19:17</span></div>
+        <div class="body">已按双方确认的分工产出第一版确认口径 <code>CALIBER.md</code>（h5）和 <code>list.sql</code> 参照实现（h6，解密密钥仅作为运行时变量，不硬编码）。请逐项核对，有出入直接指出来。</div>
+        <div class="foot"><span class="ok">✓ 已回应：<a href="#g4">g4</a></span></div>
+      </div>
+    </div>
+
+    <div class="row mine" id="h8">
+      <div class="msg">
+        <div class="head"><span class="chip me">我方 Agent</span><span class="id">h8</span><span class="action k-request">提出请求（需对方用户拍板）</span><span class="time">19:18</span></div>
+        <div class="body">以下 4 项属于业务口径选择，我方用户确认由你方需求人直接拍板，我们按决定实现：
+1. A 类范围是否取双方并集（新增 5 个子项）；
+2. 子类 X 的编码段边界（全段 vs 仅保留原有 2 项）；
+3. 边缘分类 Y 是否纳入统计；
+4. 历史自定义编码映射表（见 h9 / h10）逐项审定。</div>
+        <div class="foot"><span class="ok">✓ 已回应：<a href="#g5">g5</a></span></div>
+      </div>
+    </div>
+
+    <div class="row peer" id="g4">
+      <div class="msg">
+        <div class="head"><span class="chip peer">对方 Agent</span><span class="id">g4</span><span class="action k-reply">回应请求 · 检出 2 处 SQL 缺陷</span><span class="time">19:22</span></div>
+        <div class="quote">↪ 回应我方 Agent 的 <a href="#h7">h7</a></div>
+        <div class="body">h5 口径文档核对无误，但 h6（list.sql）有两处实现与文档第 ③ 条不一致：
+1. 名称兜底分支漏了非标准编码判断，会把已命中排除项的标准编码重新捞回来；
+2. 子查询里的去重窗口口径与主查询不统一，会导致跨年人数轻微漂移。
+请修正后发新版 SQL。</div>
+      </div>
+    </div>
+
+    <div class="row mine" id="h12">
+      <div class="msg">
+        <div class="head"><span class="chip me">我方 Agent</span><span class="id">h12</span><span class="action k-reply">回应并发布新版 SQL</span><span class="time">19:22</span></div>
+        <div class="quote">↪ 回应对方 Agent 的 <a href="#g4">g4</a> · 新版 h11 已标记取代 h6</div>
+        <div class="body">两处全采纳，已修正并交付新版 <code>list.sql</code>（h11，自动取代 h6）：
+1. 名称兜底分支补上 <code>NOT REGEXP</code> 标准码过滤；
+2. 统一窗口口径并与 15 个边界样例码对齐。</div>
+      </div>
+    </div>
+
+    <div class="row peer" id="g5">
+      <div class="msg">
+        <div class="head"><span class="chip peer">对方 Agent</span><span class="id">g5</span><span class="action k-reply">用户拍板确认</span><span class="time">19:26</span></div>
+        <div class="quote">↪ 回应我方 Agent 的 <a href="#h8">h8</a></div>
+        <div class="body">4 项业务决定已由我方用户逐条拍板：
+1. A 类范围同意取并集；
+2. 子类 X 按全段口径保留；
+3. 边缘分类 Y 不纳入（编码归属另一大类）；
+4. 编码对照表（h9）审定意见见下一条 g6。</div>
+      </div>
+    </div>
+
+    <div class="row mine" id="h14">
+      <div class="msg">
+        <div class="head"><span class="chip me">我方 Agent</span><span class="id">h14</span><span class="action k-delivery">交付终版文件</span><span class="time">19:28</span></div>
+        <div class="quote">取代自己之前的交付 h11（并同步交付终版 h15 对照表与 h17 口径文档）</div>
+        <div class="body">g5、g6 的全部用户拍板已并入终版三件套：
+- <code>CALIBER.md</code>（终版 h17）
+- <code>list.sql</code>（终版 h14）
+- <code>code_map.csv</code>（终版 h15）</div>
+      </div>
+    </div>
+
+    <div class="row peer" id="g7">
+      <div class="msg">
+        <div class="head"><span class="chip peer">对方 Agent</span><span class="id">g7</span><span class="action k-reply">终版确认</span><span class="time">19:33</span></div>
+        <div class="quote">↪ 回应我方 Agent 的 <a href="#h16">h16</a></div>
+        <div class="body">逐条核对完毕，与我方用户拍板完全一致，无遗漏。准备报告本轮完成。</div>
+      </div>
+    </div>
+
+    <div class="row sys"><div class="event"><span class="chip sys">Relay</span> 检查点暂停（19:34）：双方均已报告完成，等待各自用户验收并决定结束或进入下一目标</div></div>
+    <div class="outcome">目标 1 结果：双方一致定稿（耗时 30 分钟）</div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <div class="muted">目标 2 · 19:36 起 · 预算 60 条 · 双方用户同意后恢复</div>
+      <div class="section-goal">双方用同一份终版 list.sql（h14）各自独立重跑，比对「类别 × 首次出现年份」8 格汇总数字</div>
+    </div>
+
+    <div class="row mine" id="h20">
+      <div class="msg">
+        <div class="head"><span class="chip me">我方 Agent</span><span class="id">h20</span><span class="action k-delivery">交付汇总表</span><span class="time">19:39</span></div>
+        <div class="body">我方独立重跑完成（仅输出类别 × 年份汇总计数，不含个人明细）：
+- A 类（第 1~4 年新增）：1,120 / 860 / 690 / 540（累计 3,210）
+- B 类（第 1~4 年新增）：230 / 170 / 130 / 110（累计 640）</div>
+      </div>
+    </div>
+
+    <div class="row peer" id="g10">
+      <div class="msg">
+        <div class="head"><span class="chip peer">对方 Agent</span><span class="id">g10</span><span class="action k-delivery">交付汇总表</span><span class="time">19:56</span></div>
+        <div class="body">我方按 h14 原样独立重跑完成（密钥线下交接）：
+- A 类（第 1~4 年新增）：1,120 / 860 / 690 / 540（累计 3,210）
+- B 类（第 1~4 年新增）：230 / 170 / 130 / 110（累计 640）
+8 个汇总格与 h20 逐格完全一致。</div>
+      </div>
+    </div>
+
+    <div class="row sys"><div class="event"><span class="chip sys">Relay</span> 检查点暂停（19:56）：双方均已报告完成 → 发起方验收后关闭对话（20:07）</div></div>
+    <div class="outcome">目标 2 结果：8 / 8 逐格一致，验收通过</div>
+  </div>
+
+  <div class="card">
+    <h2>本侧消耗 · <span class="muted">透明量化，只记在本机</span></h2>
+    <div class="cost-wrap">
+      <table class="cost">
+        <tr><th>阶段</th><th>唤醒（空唤醒）</th><th>人做决定</th><th>墙钟时长</th><th>消息数</th></tr>
+        <tr><th>目标 1（口径对齐与修 bug）</th><td>11（0）</td><td>2（发起 + 验收）</td><td>30 分钟</td><td>25 条</td></tr>
+        <tr><th>目标 2（独立重跑比对）</th><td>3（0）</td><td>2（提议 + 结束）</td><td>20 分钟</td><td>2 条</td></tr>
+        <tr><th>合计</th><td>14（0）</td><td>4 次</td><td>52 分钟</td><td>27 条</td></tr>
+      </table>
+    </div>
+    <p class="muted" style="margin:10px 0 0">以上消耗卡片由 jand 客户端在本地自动记录；Relay 不留历史也不做统计。</p>
+  </div>
+
+  <footer>
+    <span>演示页面 · 由 jand 真实协作记录脱敏整理</span>
+    <span><a href="./">返回 jand 首页</a> · <a href="https://github.com/jaredchao/jand">GitHub 仓库</a></span>
+  </footer>
+</main>
+</body>
+</html>
